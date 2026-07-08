@@ -248,8 +248,15 @@ const CFG = {
   comboWindow: 1.5,        // 콤보 유지 시간(초)
   eatDist: 0.55,           // 충돌/수집 판정 거리(셀)
   lives: 3,
-  kimchiPerLevel: 3        // 레벨당 김치 파워 아이템 수
+  maxLives: 5,             // 목숨 상한(1UP 포함)
+  kimchiPerLevel: 3,       // 레벨당 김치 파워 아이템 수
+  bonusDuration: 9.0,      // 보너스 요리 유지(초)
+  chaseTime: 12.0,         // Chaser 추격 페이즈(초)
+  extraLifeEvery: 8000,    // 이 점수마다 1UP
+  tunnelSlow: 0.5          // 워프 터널 안 귀신 감속
 };
+// 보너스 요리(팩맨의 "과일") — 한국 길거리 음식
+const BONUS = ['🍜','🥟','🍡','🍥','🍤','🧁','🍧','🍢'];
 const DISHES = [
   {name:'김치',    emoji:'🥬', pot:'🍲'},
   {name:'떡볶이',  emoji:'🍢', pot:'🥘'},
@@ -314,6 +321,9 @@ const Sound = (function(){
   function dish(){ [523,659,784,1047].forEach((f,i)=>tone(f,{dur:0.22,type:'triangle',vol:0.24,delay:i*0.09})); }
   function over(){ [392,349,294,233].forEach((f,i)=>tone(f,{dur:0.5,type:'triangle',vol:0.22,delay:i*0.18})); }
   function levelUp(){ [523,659,880].forEach((f,i)=>tone(f,{dur:0.16,type:'square',vol:0.18,delay:i*0.07})); }
+  function bonusAppear(){ tone(880,{dur:0.09,type:'triangle',vol:0.18}); tone(1175,{dur:0.11,type:'triangle',vol:0.18,delay:0.1}); }
+  function bonus(){ [659,880,1047,1319].forEach((f,i)=>tone(f,{dur:0.13,type:'triangle',vol:0.22,delay:i*0.06})); }
+  function oneUp(){ [784,1047,1319,1568].forEach((f,i)=>tone(f,{dur:0.12,type:'square',vol:0.2,delay:i*0.08})); }
   // --- BGM (룩어헤드 스케줄러) ---
   function stepSeconds(){ return fast ? 0.20 : 0.25; } // 8분음표 간격
   function playNote(idx,t){
@@ -338,7 +348,7 @@ const Sound = (function(){
   function stopBGM(){ bgmActive=false; if(bgmTimer){clearTimeout(bgmTimer);bgmTimer=null;} }
   function setFast(f){ fast=f; }
   function toggleMute(){ muted=!muted; if(master) master.gain.value=muted?0:0.6; return muted; }
-  return {resume,eat,kimchiPick,power,ghost,hit,dish,over,levelUp,startBGM,stopBGM,setFast,toggleMute,
+  return {resume,eat,kimchiPick,power,ghost,hit,dish,over,levelUp,bonusAppear,bonus,oneUp,startBGM,stopBGM,setFast,toggleMute,
           get muted(){return muted;}, get ready(){return !!ctx;}};
 })();
 
@@ -443,6 +453,7 @@ let cols=0, rows=0;
 let player=null, enemies=[], ingredients=[], kimchis=[], particles=[];
 let startCell={x:1,y:1}, homeCell={x:1,y:1}, homeSlots=[];
 let mazeSprite=null; // 픽셀 아트 미로(저해상도 오프스크린, 확대 시 nearest-neighbor)
+let warpRows=new Set(); // 워프 터널이 있는 행(좌↔우 순간이동)
 let G = {
   state:'menu',       // menu | playing | cooking | paused | over
   level:1, lives:CFG.lives, score:0, timeLeft:120,
@@ -450,15 +461,28 @@ let G = {
   kimchiSlot:false, frightened:0, frightChain:0,
   invuln:0, comboMult:1, comboTimer:0,
   hitThisLevel:false, dishesDone:0, cookTimer:0, cookPerfect:false,
-  time:0
+  time:0,
+  mode:'chase', modeTimer:CFG.chaseTime,   // Scatter/Chase 리듬
+  bonus:null, bonusFired:null,             // 보너스 요리
+  nextLife:CFG.extraLifeEvery              // 1UP 임계 점수
 };
 let BEST = +(localStorage.getItem('kg_best')||0);
 
 /* ---------- 셀 헬퍼 ---------- */
 const inB=(x,y)=>x>=0&&y>=0&&x<cols&&y<rows;
 const isWall=(x,y)=>!inB(x,y)||maze[y][x];
-function canMove(x,y,d){ return !isWall(x+d.x,y+d.y); }
+const isWarpRow=(y)=>warpRows.has(y);
+function canMove(x,y,d){
+  let nx=x+d.x, ny=y+d.y;
+  if(isWarpRow(y) && d.y===0){ if(nx<0)nx=cols-1; else if(nx>=cols)nx=0; } // 좌우 순환
+  return !isWall(nx,ny);
+}
 function validDirs(x,y){ return DIRS.filter(d=>canMove(x,y,d)); }
+// 워프 터널 통과 시 좌↔우 순간이동(격자 이동 후 위치 보정)
+function wrapPos(e){
+  if(!isWarpRow(Math.round(e.y))) return;
+  if(e.x<0) e.x+=cols; else if(e.x>cols-1) e.x-=cols;
+}
 function pathCells(){
   const out=[];
   for(let y=1;y<rows-1;y++)for(let x=1;x<cols-1;x++) if(!maze[y][x]) out.push({x,y});
@@ -473,6 +497,7 @@ function loadLevel(n){
   cols=cfg.cols; rows=cfg.rows;
   dish=DISHES[(n-1)%DISHES.length];
   maze=genMaze(cols,rows);
+  setupWarpTunnels();
   const cells=pathCells();
 
   // 플레이어 시작: 하단 중앙 근처
@@ -517,12 +542,28 @@ function loadLevel(n){
 
   G.frightened=0; G.frightChain=0; G.invuln=0; G.comboMult=1; G.comboTimer=0;
   G.hitThisLevel=false; G.timeLeft=cfg.time;
+  G.mode='chase'; G.modeTimer=CFG.chaseTime;   // Scatter/Chase 초기화
+  G.bonus=null; G.bonusFired=new Set();          // 보너스 요리 초기화
   Sound.setFast(false);
-  particles.length=0;
+  particles.length=0; floats.length=0;
   computeView();
   buildMazeSprite();
 }
 function cornerDist(c,corners){ let m=1e9; for(const [x,y] of corners) m=Math.min(m,manh(c.x,c.y,x,y)); return m; }
+
+// 워프 터널: 내부 행 1~2개의 좌우 벽을 뚫어 좌↔우 순간이동
+function setupWarpTunnels(){
+  warpRows=new Set();
+  const cand=[];
+  for(let y=3;y<rows-3;y+=2){ if(!maze[y][1] && !maze[y][cols-2]) cand.push(y); }
+  if(!cand.length){ let y=Math.floor(rows/2); if(y%2===0)y++; maze[y][1]=false; maze[y][cols-2]=false; cand.push(y); }
+  shuffle(cand);
+  const count = cols>=13 ? 2 : 1;
+  for(let i=0;i<Math.min(count,cand.length);i++){
+    const y=cand[i]; warpRows.add(y);
+    maze[y][0]=false; maze[y][cols-1]=false; maze[y][1]=false; maze[y][cols-2]=false;
+  }
+}
 
 /* 픽셀 아트 미로 스프라이트 (셀당 T=10 가상픽셀; 벽은 노출된 모서리만 베벨 → 붙은 벽이 하나의 덩어리로)*/
 function buildMazeSprite(){
@@ -562,7 +603,8 @@ function buildMazeSprite(){
 }
 
 function makeEnemy(type,x,y,idx){
-  return {type,x,y,dir:pickStartDir(x,y),homeIdx:idx,
+  const cs4=[[1,1],[cols-2,1],[cols-2,rows-2],[1,rows-2]]; const cc=cs4[idx%4];
+  return {type,x,y,dir:pickStartDir(x,y),homeIdx:idx,corner:{x:cc[0],y:cc[1]},
     speed:type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level),
     path:[], replan:0, frightened:false, eaten:false, respawn:0,
     bob:rnd(6.28), t:rnd(6.28)};
@@ -605,43 +647,34 @@ function decideWhite(e){
   if(!ch.length) ch=opts;
   if(ch.length) e.dir=ch[ri(ch.length)];
 }
-function decideRed(e){
-  const tx=Math.round(player.x), ty=Math.round(player.y);
-  if(e.replan<=0 || !e.path.length){
-    e.path=astar(maze,e.x,e.y,tx,ty)||[];
-    e.replan=0.4;
-  }
+// 목표 셀로 이동(A* 경로 + 그리디 폴백). red/eaten 공용.
+function moveToward(e,tx,ty,replanEvery){
+  const cx=Math.round(e.x), cy=Math.round(e.y);
+  if(e.replan<=0 || !e.path.length){ e.path=astar(maze,cx,cy,tx,ty)||[]; e.replan=replanEvery; }
   const rev={x:-e.dir.x,y:-e.dir.y};
   if(e.path.length){
-    const [nx,ny]=e.path[0];
-    const dx=nx-e.x, dy=ny-e.y;
+    const [nx,ny]=e.path[0], dx=nx-cx, dy=ny-cy;
     if(Math.abs(dx)+Math.abs(dy)===1){ e.dir={x:dx,y:dy}; e.path.shift(); return; }
     e.path=[];
   }
-  // 그리디 폴백
-  let opts=validDirs(e.x,e.y);
-  let ch=opts.filter(d=>!(d.x===rev.x&&d.y===rev.y)); if(!ch.length)ch=opts;
-  ch.sort((a,b)=>manh(e.x+a.x,e.y+a.y,tx,ty)-manh(e.x+b.x,e.y+b.y,tx,ty));
+  let ch=validDirs(cx,cy).filter(d=>!(d.x===rev.x&&d.y===rev.y)); if(!ch.length)ch=validDirs(cx,cy);
+  ch.sort((a,b)=>manh(cx+a.x,cy+a.y,tx,ty)-manh(cx+b.x,cy+b.y,tx,ty));
   if(ch.length) e.dir=ch[0];
 }
+function decideRed(e){
+  if(G.mode==='scatter') moveToward(e, e.corner.x, e.corner.y, 0.5); // 산개: 자기 구석으로
+  else moveToward(e, Math.round(player.x), Math.round(player.y), 0.4); // 추격
+}
 function decideFrightened(e){
-  const opts=validDirs(e.x,e.y), rev={x:-e.dir.x,y:-e.dir.y};
-  let ch=opts.filter(d=>!(d.x===rev.x&&d.y===rev.y)); if(!ch.length)ch=opts;
-  ch.sort((a,b)=>manh(e.x+b.x,e.y+b.y,player.x,player.y)-manh(e.x+a.x,e.y+a.y,player.x,player.y));
+  const cx=Math.round(e.x), cy=Math.round(e.y), rev={x:-e.dir.x,y:-e.dir.y};
+  let ch=validDirs(cx,cy).filter(d=>!(d.x===rev.x&&d.y===rev.y)); if(!ch.length)ch=validDirs(cx,cy);
+  ch.sort((a,b)=>manh(cx+b.x,cy+b.y,player.x,player.y)-manh(cx+a.x,cy+a.y,player.x,player.y));
   if(!ch.length) return;
   e.dir = (rnd()<0.65)? ch[0] : ch[ri(ch.length)];
 }
 function decideEaten(e){
   const h=homeSlots[e.homeIdx%homeSlots.length];
-  if(e.replan<=0 || !e.path.length){ e.path=astar(maze,e.x,e.y,h.x,h.y)||[]; e.replan=0.3; }
-  if(e.path.length){
-    const [nx,ny]=e.path[0], dx=nx-e.x, dy=ny-e.y;
-    if(Math.abs(dx)+Math.abs(dy)===1){ e.dir={x:dx,y:dy}; e.path.shift(); return; }
-    e.path=[];
-  }
-  const v=validDirs(e.x,e.y);
-  v.sort((a,b)=>manh(e.x+a.x,e.y+a.y,h.x,h.y)-manh(e.x+b.x,e.y+b.y,h.x,h.y));
-  if(v.length) e.dir=v[0];
+  moveToward(e,h.x,h.y,0.3);
 }
 
 /* =======================================================================
@@ -665,12 +698,23 @@ function update(dt){
     if(G.frightened<=0){ enemies.forEach(e=>{ if(!e.eaten) e.frightened=false; }); G.frightChain=0; }
   }
 
+  // Scatter/Chase 리듬 (프라이트 중엔 멈춤). 페이즈 전환 시 귀신 방향 반전 = 고전 팩맨 신호
+  if(G.frightened<=0){
+    G.modeTimer-=dt;
+    if(G.modeTimer<=0){
+      G.mode = (G.mode==='chase')?'scatter':'chase';
+      G.modeTimer = (G.mode==='chase')?CFG.chaseTime:scatterTime(cfg.level);
+      enemies.forEach(e=>{ if(!e.eaten){ e.dir={x:-e.dir.x,y:-e.dir.y}; e.path=[]; } });
+    }
+  }
+
   // 플레이어
   player.t+=dt;
   const moving=(player.dir.x||player.dir.y);
   player.mouth = moving ? (Math.sin(player.t*16)*0.5+0.5) : 0.06;
   if(moving) player.face=Math.atan2(player.dir.y,player.dir.x);
   stepEntity(player,dt,decidePlayer);
+  wrapPos(player);
 
   // 수집: 일반 재료
   for(let i=ingredients.length-1;i>=0;i--){
@@ -685,6 +729,17 @@ function update(dt){
     const k=kimchis[i];
     if(Math.hypot(player.x-k.x,player.y-k.y)<CFG.eatDist){
       kimchis.splice(i,1); G.kimchiSlot=true; Sound.kimchiPick(); spawnPop(k.x,k.y,COL.red);
+    }
+  }
+  // 보너스 요리(팩맨의 과일)
+  if(G.bonus){
+    G.bonus.timer-=dt;
+    if(G.bonus.timer<=0){ G.bonus=null; }
+    else if(Math.hypot(player.x-G.bonus.x,player.y-G.bonus.y)<CFG.eatDist){
+      G.score+=G.bonus.points; Sound.bonus();
+      floatText(G.bonus.x,G.bonus.y,'+'+G.bonus.points,'#ffd76a');
+      spawnBurst(G.bonus.x,G.bonus.y,COL.yellow);
+      G.bonus=null;
     }
   }
 
@@ -706,20 +761,22 @@ function update(dt){
         }
       } else {
         e.speed=CFG.playerSpeed*1.7; // 집으로 돌아가는 중에만 이동
-        stepEntity(e,dt,decideEaten);
+        stepEntity(e,dt,decideEaten); wrapPos(e);
       }
       continue;
     }
+    const tf=tunnelFactor(e);
     if(e.frightened){
-      e.speed=(e.type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level))*0.6;
+      e.speed=(e.type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level))*0.6*tf;
       stepEntity(e,dt,decideFrightened);
     } else if(e.type==='red'){
-      e.speed=rubberband(e);
+      e.speed=rubberband(e)*tf;
       stepEntity(e,dt,decideRed);
     } else {
-      e.speed=whiteSpeed(cfg.level);
+      e.speed=whiteSpeed(cfg.level)*tf;
       stepEntity(e,dt,decideWhite);
     }
+    wrapPos(e);
   }
 
   // 충돌
@@ -732,9 +789,36 @@ function update(dt){
   }
 
   updateParticles(dt);
+  checkExtraLife();
 
   // 요리 완성?
   if(G.got>=G.need) startCook();
+}
+
+const scatterTime=(lv)=>Math.max(3, 6-0.25*lv); // 레벨↑ → 산개 시간 소폭 감소
+function tunnelFactor(e){ // 워프 터널 안 귀신 감속(고전 팩맨) → 플레이어 도주로
+  const rx=Math.round(e.x), ry=Math.round(e.y);
+  return (isWarpRow(ry) && (rx<=1||rx>=cols-2)) ? CFG.tunnelSlow : 1;
+}
+function checkExtraLife(){
+  while(G.score>=G.nextLife){
+    if(G.lives<CFG.maxLives){ G.lives++; Sound.oneUp(); floatText(player.x,player.y-0.6,'1UP ❤️',COL.red); }
+    G.nextLife+=CFG.extraLifeEvery;
+  }
+}
+// 보너스 요리 스폰(재료 40%/75% 지점, 팩맨의 과일 타이밍)
+function maybeBonus(){
+  if(G.bonus) return;
+  const t1=Math.max(2,Math.floor(G.need*0.4)), t2=Math.max(3,Math.floor(G.need*0.75));
+  if((G.got===t1||G.got===t2) && !G.bonusFired.has(G.got)){ G.bonusFired.add(G.got); spawnBonus(); }
+}
+function spawnBonus(){
+  const cs=pathCells().filter(c=> Math.hypot(c.x-player.x,c.y-player.y)>3);
+  if(!cs.length) return;
+  const c=cs[ri(cs.length)];
+  G.bonus={x:c.x,y:c.y,timer:CFG.bonusDuration,max:CFG.bonusDuration,
+           emoji:BONUS[ri(BONUS.length)],points:300+cfg.level*50};
+  Sound.bonusAppear();
 }
 
 function rubberband(e){
@@ -752,6 +836,7 @@ function collectIngredient(g){
   G.score += Math.round(10*G.comboMult);
   Sound.eat(G.comboMult);
   spawnPop(g.x,g.y,COL.yellow);
+  maybeBonus();
 }
 function eatGhost(e){
   G.frightChain++;
@@ -798,6 +883,7 @@ function startCook(){
   const timeBonus=Math.floor(G.timeLeft)*5;
   G.score += 500 + timeBonus + (G.cookPerfect?250:0);
   G.dishesDone++;
+  checkExtraLife(); // 요리 보너스로 1UP 임계 넘을 수 있음
   Sound.dish(); Sound.setFast(false);
   // 요리 오버레이 표시
   document.getElementById('cook-dish').textContent = dish.name+' 완성!  (시간 보너스 +'+timeBonus+')';
@@ -864,6 +950,18 @@ function render(){
   // 미로: 픽셀 아트 스프라이트를 nearest-neighbor로 확대 → 도트 질감
   ctx.imageSmoothingEnabled=false;
   if(mazeSprite) ctx.drawImage(mazeSprite, VIEW.ox, VIEW.oy, cs*cols, cs*rows);
+  // 워프 터널 입구(양쪽) — 소용돌이 포탈
+  const wp=0.5+0.5*Math.sin(G.time*4);
+  warpRows.forEach(y=>{
+    for(const x of [0,cols-1]){
+      const X=px(x),Y=py(y),r=cs*0.42;
+      ctx.save();
+      ctx.fillStyle=`rgba(94,138,120,${0.25+0.2*wp})`; ctx.beginPath(); ctx.arc(X,Y,r,0,6.283); ctx.fill();
+      ctx.strokeStyle=`rgba(232,163,44,${0.55+0.35*wp})`; ctx.lineWidth=2.5;
+      for(let k=0;k<3;k++){ ctx.beginPath(); ctx.arc(X,Y,r*(0.35+k*0.22),G.time*2+k*2,G.time*2+k*2+4.2); ctx.stroke(); }
+      ctx.restore();
+    }
+  });
   // 재료 (색 있는 "펠릿" 원반 + 이모지 → 어떤 기기/폰트에서도 잘 보임)
   ctx.textAlign='center'; ctx.textBaseline='middle';
   const emFont='px system-ui,"Apple Color Emoji","Noto Color Emoji","Segoe UI Emoji"';
@@ -888,6 +986,21 @@ function render(){
     ctx.beginPath(); ctx.arc(X,Y,cs*0.40,0,6.283); ctx.stroke();
     ctx.font=Math.floor(cs*0.34)+emFont; ctx.fillStyle='#fff'; ctx.fillText('🌶️',X,Y+1);
     ctx.restore();
+  }
+  // 보너스 요리(과일) — 반짝이는 링 + 이모지, 마지막 2초 깜빡임
+  if(G.bonus){
+    const b=G.bonus, X=px(b.x), Y=py(b.y), r=cs*0.34;
+    const show = b.timer>2 || Math.floor(G.time*8)%2===0;
+    if(show){
+      ctx.save();
+      const grad=ctx.createRadialGradient(X-r*0.3,Y-r*0.3,r*0.2,X,Y,r);
+      grad.addColorStop(0,'#fff3cf'); grad.addColorStop(1,'#f0b73e');
+      ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(X,Y,r,0,6.283); ctx.fill();
+      ctx.strokeStyle=`rgba(232,163,44,${0.5+0.5*pulse})`; ctx.lineWidth=2+pulse*2.5;
+      ctx.beginPath(); ctx.arc(X,Y,cs*0.44,0,6.283); ctx.stroke();
+      ctx.font=Math.floor(cs*0.4)+emFont; ctx.fillText(b.emoji,X,Y+1);
+      ctx.restore();
+    }
   }
   // 파티클(뒤)
   for(const p of particles){ ctx.globalAlpha=Math.max(0,p.life/p.max); ctx.fillStyle=p.c;
@@ -933,7 +1046,8 @@ function drawGhost(e){
   if(e.eaten){ drawEyes(X,Y,r,e,'#cdd7f0'); return; }
   let body;
   if(e.frightened) body = blink ? COL.frightenedPale : COL.frightened;
-  else body = e.type==='red' ? COL.ghostRed : COL.ghostWhite;
+  else if(e.type==='red') body = (G.mode==='scatter') ? '#e0938b' : COL.ghostRed; // 산개 중엔 옅은 빨강(경계 완화 신호)
+  else body = COL.ghostWhite;
   ctx.save();
   ctx.globalAlpha = e.type==='white'&&!e.frightened ? 0.92 : 0.96;
   ctx.fillStyle=body;
@@ -1007,7 +1121,7 @@ function hideAllOverlays(){ ['menu','pause','cook','over','help'].forEach(hideOv
 function newRun(){
   Sound.resume(); Sound.startBGM();
   G.level=1; G.lives=CFG.lives; G.score=0; G.dishesDone=0; G.time=0;
-  G.kimchiSlot=false; G.state='playing';
+  G.kimchiSlot=false; G.state='playing'; G.nextLife=CFG.extraLifeEvery;
   hideAllOverlays();
   loadLevel(1);
 }
@@ -1093,6 +1207,7 @@ if(location.search.indexOf('debug')>=0){
   window.KG={
     get G(){return G;}, get player(){return player;}, get enemies(){return enemies;},
     get ingredients(){return ingredients;}, get kimchis(){return kimchis;}, get maze(){return maze;},
+    get warpRows(){return [...warpRows];}, get cols(){return cols;}, get rows(){return rows;},
     collectAll(){ ingredients.length=0; G.got=G.need; },
     giveKimchi(){ G.kimchiSlot=true; },
     setTime(s){ G.timeLeft=s; },
