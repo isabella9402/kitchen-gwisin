@@ -460,6 +460,24 @@ let maze=null, cfg=null, dish=null;
 let cols=0, rows=0;
 let player=null, enemies=[], ingredients=[], kimchis=[], particles=[];
 let salts=[], warps=[], warpMap=null, bonus=null, stars=[];
+// --- FX (게임 필 / 몰입 연출) ---
+let shakeAmt=0, flashCol='#000', flashA=0, hitStop=0, trail=[], shockwaves=[], trailT=0;
+const REDUCE = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+function addShake(v){ if(REDUCE) return; shakeAmt=Math.min(16, shakeAmt+v); }
+function addFlash(col,a){ flashCol=col; flashA=Math.max(flashA, REDUCE? a*0.35 : a); }
+function addHitStop(t){ if(REDUCE) return; hitStop=Math.max(hitStop,t); }
+function addShock(x,y,c,max){ if(REDUCE) return; shockwaves.push({x,y,r:0.25,max:max||3.2,life:0.5,maxLife:0.5,c}); }
+function resetFX(){ shakeAmt=0; flashA=0; hitStop=0; trail.length=0; shockwaves.length=0; trailT=0; }
+function updateFX(dt){
+  if(shakeAmt>0) shakeAmt=Math.max(0, shakeAmt - dt*42);
+  if(flashA>0) flashA=Math.max(0, flashA - dt*2.4);
+  for(let i=shockwaves.length-1;i>=0;i--){ const s=shockwaves[i]; s.life-=dt; s.r+=dt*(s.max/s.maxLife); if(s.life<=0) shockwaves.splice(i,1); }
+  for(let i=trail.length-1;i>=0;i--){ trail[i].life-=dt; if(trail[i].life<=0) trail.splice(i,1); }
+  if(!REDUCE && G.state==='playing' && player && (player.dir.x||player.dir.y)){
+    trailT-=dt;
+    if(trailT<=0){ trailT=0.028; trail.push({x:player.x,y:player.y,life:0.26,max:0.26}); if(trail.length>16) trail.shift(); }
+  }
+}
 let startCell={x:1,y:1}, homeCell={x:1,y:1}, homeSlots=[];
 let G = {
   state:'menu',       // menu | playing | cooking | paused | over
@@ -571,7 +589,7 @@ function loadLevel(n){
   G.freeze=0; bonus=null; G.bonusCd=CFG.bonusFirst;
   G.hitThisLevel=false; G.timeLeft=cfg.time;
   Sound.setFast(false);
-  particles.length=0;
+  particles.length=0; resetFX();
   // 별밭 생성(복도 배경)
   stars=[]; const nStars=Math.floor(cols*rows*0.55);
   for(let i=0;i<nStars;i++){
@@ -702,6 +720,7 @@ function update(dt){
   // 타이머
   G.timeLeft-=dt;
   if(G.timeLeft<=20 && !Sound.muted) Sound.setFast(true);
+  if(G.timeLeft<=8) addShake((8-G.timeLeft)/8*0.9);   // 초신성 임박 진동
   if(G.timeLeft<=0){ G.timeLeft=0; return gameOver('time'); }
 
   // 콤보
@@ -818,11 +837,13 @@ function eatGhost(e){
   Sound.ghost(G.frightChain);
   spawnSmoke(e.x,e.y);
   floatText(e.x,e.y,'+'+pts,COL.yellow);
+  addShake(5+G.frightChain); addHitStop(0.07); addShock(e.x,e.y,'#7ff0ff',2.6); addFlash('#37e6ff',0.12);
 }
 function hitPlayer(){
   G.lives--; G.hitThisLevel=true; G.comboMult=1; G.comboTimer=0;
   Sound.hit();
   spawnBurst(player.x,player.y,COL.red);
+  addShake(14); addFlash('#ff3c5a',0.55); addHitStop(0.12); addShock(player.x,player.y,'#ff5a6e',3.4);
   if(G.lives<=0){ return gameOver('dead'); }
   resetPositions();
   G.invuln=CFG.invuln;
@@ -846,6 +867,7 @@ function activatePower(){
   enemies.forEach(e=>{ if(!e.eaten){ e.frightened=true; e.dir={x:-e.dir.x,y:-e.dir.y}; e.path=[]; } });
   Sound.power();
   spawnBurst(player.x,player.y,COL.red);
+  addShake(7); addFlash('#ff3ea5',0.32); addShock(player.x,player.y,'#ff3ea5',4.2);
 }
 // 소금 부적: 모든 귀신을 잠시 그 자리에 묶는다(먹지는 못함 · 순수 방어)
 function activateSalt(){
@@ -855,6 +877,7 @@ function activateSalt(){
   Sound.salt();
   for(let i=0;i<16;i++){ const a=i/16*6.283;
     particles.push({x:player.x,y:player.y,vx:Math.cos(a)*2.2,vy:Math.sin(a)*2.2,life:.5,max:.5,c:'#ffffff',r:2.5,g:0}); }
+  addShake(4); addFlash('#8fe6ff',0.3); addShock(player.x,player.y,'#8fe6ff',4.0);
 }
 
 /* ---------- 황금 간식 (움직이는 보너스) ---------- */
@@ -885,6 +908,7 @@ function collectBonus(){
   G.timeLeft=Math.min(cfg.time, G.timeLeft+CFG.bonusTime);
   floatText(bonus.x,bonus.y,'+'+pts,'#ffe08a');
   spawnBurst(bonus.x,bonus.y,COL.yellow);
+  addShake(3); addFlash('#ffd54a',0.22); addShock(bonus.x,bonus.y,'#ffd54a',2.6);
   Sound.bonus();
   bonus=null;
 }
@@ -897,6 +921,7 @@ function startCook(){
   G.score += 500 + timeBonus + (G.cookPerfect?250:0);
   G.dishesDone++;
   Sound.dish(); Sound.setFast(false);
+  addShake(8); addFlash('#37e6ff',0.4); if(player) addShock(player.x,player.y,'#37e6ff',5);
   // 요리 오버레이 표시
   document.getElementById('cook-dish').textContent = dish.name+' 확보!  (시간 보너스 +'+timeBonus+')';
   document.getElementById('cook-pot').textContent = dish.pot;
@@ -959,6 +984,9 @@ function render(){
   ctx.setTransform(VIEW.dpr,0,0,VIEW.dpr,0,0);
   ctx.clearRect(0,0,VIEW.w,VIEW.h);
   if(!maze) return;
+  // 화면 흔들림 (임팩트)
+  if(shakeAmt>0.1){ const sxx=(Math.random()*2-1)*shakeAmt, syy=(Math.random()*2-1)*shakeAmt;
+    ctx.setTransform(VIEW.dpr,0,0,VIEW.dpr, sxx*VIEW.dpr, syy*VIEW.dpr); }
   // 바닥 (심우주)
   const floorG=ctx.createRadialGradient(VIEW.ox+cs*cols*0.5,VIEW.oy+cs*rows*0.35,cs,VIEW.ox+cs*cols*0.5,VIEW.oy+cs*rows*0.5,cs*rows*0.7);
   floorG.addColorStop(0,'#0c1330'); floorG.addColorStop(1,'#05081a');
@@ -1071,16 +1099,44 @@ function render(){
   for(const p of particles){ ctx.globalAlpha=Math.max(0,p.life/p.max); ctx.fillStyle=p.c;
     ctx.beginPath(); ctx.arc(px(p.x),py(p.y),p.r,0,6.283); ctx.fill(); }
   ctx.globalAlpha=1;
+  // 충격파 링
+  for(const s of shockwaves){ const k=s.life/s.maxLife; ctx.globalAlpha=k*0.7; ctx.strokeStyle=s.c; ctx.lineWidth=Math.max(1,cs*0.12*k);
+    ctx.beginPath(); ctx.arc(px(s.x),py(s.y),s.r*cs,0,6.283); ctx.stroke(); }
+  ctx.globalAlpha=1;
   // 적
   for(const e of enemies) drawGhost(e);
+  // 함선 추진 잔상(트레일)
+  for(const tr of trail){ const k=tr.life/tr.max; ctx.globalAlpha=k*0.4; ctx.fillStyle='#ffd76a';
+    ctx.beginPath(); ctx.arc(px(tr.x),py(tr.y),cs*0.3*k,0,6.283); ctx.fill(); }
+  ctx.globalAlpha=1;
   // 플레이어
   drawPlayer();
-  // 떠오르는 점수
+  // 포커스 비네트 (가장자리 어둡게 → 시선 집중 · 위험/파워 시 색 변화)
+  {
+    const cx=VIEW.ox+cs*cols/2, cy=VIEW.oy+cs*rows/2, maxR=Math.hypot(cs*cols/2,cs*rows/2);
+    let danger=0;
+    if(G.state==='playing' && player){ let md=99;
+      for(const e of enemies){ if(e.eaten||e.frightened) continue; const d=Math.hypot(player.x-e.x,player.y-e.y); if(d<md)md=d; }
+      danger=clamp((4.5-md)/4.5,0,1);
+    }
+    let edge;
+    if(G.frightened>0){ const p=REDUCE?0.45:(0.4+0.14*Math.sin(G.time*8)); edge='rgba(120,20,90,'+p+')'; }
+    else if(danger>0.05){ edge='rgba(120,10,20,'+(0.28+danger*0.42)+')'; }
+    else edge='rgba(2,4,14,0.5)';
+    const vg=ctx.createRadialGradient(cx,cy,maxR*0.55,cx,cy,maxR);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,edge);
+    ctx.fillStyle=vg; ctx.fillRect(VIEW.ox,VIEW.oy,cs*cols,cs*rows);
+  }
+  // 떠오르는 점수 (팝 + 글로우)
   ctx.textAlign='center';
-  for(const f of floats){ ctx.globalAlpha=Math.max(0,f.life/f.max); ctx.fillStyle=f.c;
-    ctx.font='bold '+Math.floor(cs*0.5)+'px system-ui,sans-serif';
+  for(const f of floats){ const k=f.life/f.max; ctx.globalAlpha=Math.max(0,k);
+    ctx.fillStyle=f.c; ctx.shadowColor=f.c; ctx.shadowBlur=cs*0.3*k;
+    ctx.font='bold '+Math.floor(cs*0.5*(1+(1-k)*0.35))+'px system-ui,sans-serif';
     ctx.fillText(f.txt,px(f.x),py(f.y)); }
-  ctx.globalAlpha=1;
+  ctx.shadowBlur=0; ctx.globalAlpha=1;
+  // 임팩트 플래시 (전체 화면)
+  if(flashA>0.01){ ctx.setTransform(VIEW.dpr,0,0,VIEW.dpr,0,0); ctx.globalAlpha=flashA; ctx.fillStyle=flashCol;
+    ctx.fillRect(0,0,VIEW.w,VIEW.h); ctx.globalAlpha=1; }
 }
 
 function drawPlayer(){
@@ -1302,7 +1358,11 @@ let last=performance.now(), acc=0; const STEP=1/60;
 function frame(now){
   requestAnimationFrame(frame);
   let dt=(now-last)/1000; last=now; if(dt>0.1)dt=0.1;
-  if(G.state==='playing'){ acc+=dt; let n=0; while(acc>=STEP && n++<5){ update(STEP); acc-=STEP; } }
+  updateFX(dt);
+  if(G.state==='playing'){
+    if(hitStop>0){ hitStop-=dt; }
+    else { acc+=dt; let n=0; while(acc>=STEP && n++<5){ update(STEP); acc-=STEP; } }
+  }
   else if(G.state==='cooking'){
     G.cookTimer-=dt; updateParticles(dt);
     const p=clamp(1-G.cookTimer/CFG.cookTime,0,1);
