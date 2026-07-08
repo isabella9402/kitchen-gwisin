@@ -1,0 +1,1040 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1c1714">
+<title>부엌 귀신 · Kitchen Gwisin</title>
+<style>
+/* ========================================================================
+   Kitchen Gwisin (부엌 귀신) — MVP (M1+M2)
+   단일 HTML 파일 · Canvas 2D + 이모지 · 한국어 UI · WebAudio 사운드
+   ======================================================================== */
+:root{
+  --cream:#F4EAD5;   /* 한지 크림 */
+  --green:#3E6B5C;   /* 한옥 기와 초록 */
+  --green-d:#2f5346;
+  --green-l:#5a8a78;
+  --red:#C0392B;     /* 고추장 빨강 */
+  --red-l:#e05a4b;
+  --yellow:#E8A32C;  /* 나물 노랑 */
+  --ink:#2b2320;
+  --bg:#1c1714;
+  --panel:rgba(244,234,213,0.92);
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  background:radial-gradient(circle at 50% 30%, #2a221d 0%, var(--bg) 70%);
+  font-family:'Apple SD Gothic Neo','Noto Sans KR','Malgun Gothic','Segoe UI',system-ui,sans-serif;
+  color:var(--ink);
+  display:flex;align-items:center;justify-content:center;
+  overflow:hidden;user-select:none;-webkit-user-select:none;
+  touch-action:none;
+}
+#frame{
+  position:relative;
+  width:min(100vw, 56.25vh);
+  height:min(177.78vw, 100vh);
+  background:linear-gradient(180deg,#4a3f36 0%, #3a322b 100%);
+  display:flex;flex-direction:column;
+  overflow:hidden;
+  box-shadow:0 0 40px rgba(0,0,0,0.6), inset 0 0 0 2px rgba(232,163,44,0.25);
+  border-radius:14px;
+}
+/* ---------- HUD (상단 ~13%) ---------- */
+#hud{
+  flex:0 0 auto;height:13%;min-height:64px;
+  background:var(--panel);
+  border-bottom:3px solid var(--green);
+  padding:6px 12px;display:flex;flex-direction:column;gap:4px;justify-content:center;
+}
+.hud-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+#lives{font-size:clamp(14px,3.6vw,22px);letter-spacing:1px;}
+#timer{font-size:clamp(15px,4vw,24px);font-weight:800;color:var(--green-d);font-variant-numeric:tabular-nums;}
+#timer.warn{color:var(--red);animation:pulse .6s infinite;}
+#score-wrap{font-size:clamp(11px,2.9vw,16px);color:var(--ink);font-weight:700;}
+#score-wrap b{color:var(--red);font-variant-numeric:tabular-nums;}
+.dish-row{display:flex;align-items:center;gap:8px;}
+#dish{font-size:clamp(12px,3.2vw,18px);font-weight:800;color:var(--green-d);white-space:nowrap;}
+#bar{flex:1;height:14px;background:rgba(62,107,92,0.2);border-radius:8px;overflow:hidden;border:1px solid rgba(62,107,92,.35);}
+#bar-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--yellow),var(--red-l));transition:width .18s ease;border-radius:8px;}
+#bar-txt{font-size:clamp(11px,2.9vw,16px);font-weight:800;color:var(--green-d);font-variant-numeric:tabular-nums;min-width:42px;text-align:right;}
+#combo{font-size:clamp(10px,2.6vw,14px);color:var(--red);font-weight:800;opacity:0;transition:opacity .2s;}
+#combo.on{opacity:1;}
+/* ---------- Stage (미궁, 가운데) ---------- */
+#stage{flex:1 1 auto;position:relative;display:flex;align-items:center;justify-content:center;
+  background:linear-gradient(180deg,#efe3c8,#e7d8b6);overflow:hidden;}
+#cv{display:block;image-rendering:auto;}
+/* ---------- 컨트롤 (하단 ~12%) ---------- */
+#ctrl{
+  flex:0 0 auto;height:12%;min-height:58px;
+  background:var(--panel);border-top:3px solid var(--green);
+  display:flex;align-items:center;justify-content:center;position:relative;padding:0 12px;
+}
+.icon-btn{
+  position:absolute;top:50%;transform:translateY(-50%);
+  width:46px;height:46px;border-radius:50%;border:none;cursor:pointer;
+  background:var(--green);color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 3px 0 var(--green-d);
+}
+.icon-btn:active{transform:translateY(-50%) translateY(2px);box-shadow:0 1px 0 var(--green-d);}
+#mute-btn{left:12px;}
+#pause-btn{right:12px;}
+#power-btn{
+  width:clamp(120px,52%,240px);height:clamp(44px,80%,60px);border-radius:32px;border:none;cursor:pointer;
+  background:linear-gradient(180deg,var(--red-l),var(--red));color:#fff;
+  font-size:clamp(14px,3.8vw,19px);font-weight:800;letter-spacing:.5px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  box-shadow:0 4px 0 #8f271c, 0 0 20px rgba(224,90,75,.5);
+  transition:filter .15s, opacity .15s;
+}
+#power-btn:active{transform:translateY(2px);box-shadow:0 2px 0 #8f271c;}
+#power-btn.empty{filter:grayscale(.85) brightness(.8);opacity:.55;box-shadow:0 4px 0 #555;}
+#power-btn.ready{animation:glow 1s ease-in-out infinite;}
+@keyframes glow{0%,100%{box-shadow:0 4px 0 #8f271c,0 0 12px rgba(224,90,75,.5);}50%{box-shadow:0 4px 0 #8f271c,0 0 26px rgba(232,163,44,.9);}}
+@keyframes pulse{0%,100%{transform:scale(1);}50%{transform:scale(1.12);}}
+/* ---------- 오버레이 ---------- */
+.overlay{
+  position:absolute;inset:0;z-index:10;
+  background:rgba(28,23,20,0.82);backdrop-filter:blur(3px);
+  display:none;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;padding:24px;color:var(--cream);gap:14px;
+}
+.overlay.show{display:flex;}
+.overlay h1{font-size:clamp(28px,8.5vw,52px);color:var(--yellow);text-shadow:2px 3px 0 var(--red);line-height:1.1;}
+.overlay h2{font-size:clamp(22px,6.5vw,40px);color:var(--yellow);text-shadow:2px 2px 0 var(--red);}
+.overlay .sub{font-size:clamp(13px,3.6vw,18px);color:var(--cream);opacity:.9;line-height:1.5;}
+.overlay .big-emoji{font-size:clamp(56px,17vw,110px);line-height:1;filter:drop-shadow(0 6px 10px rgba(0,0,0,.4));}
+.overlay .stat{font-size:clamp(15px,4.2vw,22px);font-weight:700;}
+.overlay .stat b{color:var(--yellow);}
+.overlay .best{font-size:clamp(13px,3.4vw,17px);color:#cbb995;}
+.btn{
+  margin-top:6px;padding:14px 34px;border:none;border-radius:40px;cursor:pointer;
+  background:linear-gradient(180deg,var(--yellow),#c9861f);color:#3a2a10;
+  font-size:clamp(16px,4.6vw,22px);font-weight:800;letter-spacing:1px;
+  box-shadow:0 5px 0 #9a6812;
+}
+.btn:active{transform:translateY(3px);box-shadow:0 2px 0 #9a6812;}
+.hint{font-size:clamp(11px,3vw,15px);color:#cbb995;line-height:1.6;margin-top:2px;}
+.hint kbd{background:rgba(244,234,213,.16);border:1px solid rgba(244,234,213,.3);border-radius:5px;padding:1px 7px;font-family:inherit;}
+#cook .potwrap{position:relative;}
+#cook .steam{position:absolute;top:-10px;left:50%;font-size:clamp(28px,8vw,52px);}
+.perfect{color:#ffe08a !important;text-shadow:0 0 14px rgba(255,224,138,.9);font-weight:800;}
+#cook-bar{width:min(72%,260px);height:12px;background:rgba(244,234,213,.2);border-radius:8px;overflow:hidden;}
+#cook-bar > i{display:block;height:100%;width:0%;background:linear-gradient(90deg,var(--yellow),var(--red-l));}
+.credit{position:absolute;bottom:10px;font-size:11px;color:#8a7a63;}
+@media (orientation:landscape) and (max-height:520px){
+  #rotate{display:flex;}
+}
+#rotate .big-emoji{animation:spin 2.4s ease-in-out infinite;}
+@keyframes spin{0%,100%{transform:rotate(0deg);}50%{transform:rotate(90deg);}}
+</style>
+</head>
+<body>
+<div id="frame">
+  <!-- 상단 HUD -->
+  <div id="hud">
+    <div class="hud-row">
+      <div id="lives">❤️❤️❤️</div>
+      <div id="timer">02:00</div>
+      <div id="score-wrap">점수 <b id="score">0</b></div>
+    </div>
+    <div class="hud-row dish-row">
+      <div id="dish">🍲 김치</div>
+      <div id="bar"><div id="bar-fill"></div></div>
+      <div id="bar-txt">0/8</div>
+      <div id="combo">콤보 x2.0!</div>
+    </div>
+  </div>
+
+  <!-- 미궁 -->
+  <div id="stage"><canvas id="cv"></canvas></div>
+
+  <!-- 하단 컨트롤 -->
+  <div id="ctrl">
+    <button id="mute-btn" class="icon-btn" title="소리">🔊</button>
+    <button id="power-btn" class="empty"><span id="power-ic">🌶️</span><span id="power-label">파워</span></button>
+    <button id="pause-btn" class="icon-btn" title="일시정지">⏸️</button>
+  </div>
+
+  <!-- 오버레이: 메인 메뉴 -->
+  <div class="overlay show" id="menu">
+    <div class="big-emoji">🍲👻</div>
+    <h1>부엌 귀신</h1>
+    <div class="sub">Kitchen Gwisin<br>귀신이 깃든 한옥 부엌에서<br>동트기 전에 완벽한 한식을 완성하세요!</div>
+    <button class="btn" id="start-btn">시작 ▶</button>
+    <div class="best">최고 점수 <b id="menu-best">0</b></div>
+    <div class="hint">📱 스와이프로 이동 · 가운데 버튼으로 파워<br>💻 <kbd>↑↓←→</kbd>/<kbd>WASD</kbd> 이동 · <kbd>Space</kbd> 파워 · <kbd>Esc</kbd> 일시정지</div>
+    <div class="credit">v1.0 MVP · spooky-cute</div>
+  </div>
+
+  <!-- 오버레이: 일시정지 -->
+  <div class="overlay" id="pause">
+    <h2>일시정지</h2>
+    <button class="btn" id="resume-btn">계속하기</button>
+    <button class="btn" id="restart-btn" style="background:linear-gradient(180deg,var(--green-l),var(--green));color:#fff;box-shadow:0 5px 0 var(--green-d);">처음부터</button>
+  </div>
+
+  <!-- 오버레이: 요리 중 -->
+  <div class="overlay" id="cook">
+    <div class="potwrap"><div class="steam" id="cook-steam">♨️</div><div class="big-emoji" id="cook-pot">🍲</div></div>
+    <h2 id="cook-title">요리 중...</h2>
+    <div class="sub" id="cook-dish">김치 완성!</div>
+    <div class="stat perfect" id="cook-perfect" style="display:none">✨ 완벽한 요리! +250</div>
+    <div id="cook-bar"><i></i></div>
+  </div>
+
+  <!-- 오버레이: 게임 오버 -->
+  <div class="overlay" id="over">
+    <div class="big-emoji">🌙</div>
+    <h2>게임 오버</h2>
+    <div class="sub" id="over-reason">동이 트기 전에 쓰러졌어요...</div>
+    <div class="stat">점수 <b id="over-score">0</b></div>
+    <div class="stat">완성한 요리 <b id="over-dishes">0</b>접시</div>
+    <div class="best" id="over-best">최고 점수 0</div>
+    <button class="btn" id="again-btn">다시 하기 🔁</button>
+  </div>
+
+  <!-- 오버레이: 세로로 돌려주세요 -->
+  <div class="overlay" id="rotate">
+    <div class="big-emoji">📱</div>
+    <h2>세로로 돌려주세요</h2>
+    <div class="sub">이 게임은 세로 화면(9:16)에서 플레이합니다.</div>
+  </div>
+</div>
+
+<script>
+"use strict";
+(function(){
+/* =======================================================================
+   0. 상수 / 팔레트
+   ======================================================================= */
+const COL = {
+  cream:'#F4EAD5', green:'#3E6B5C', greenD:'#2f5346', greenL:'#5a8a78',
+  red:'#C0392B', redL:'#e05a4b', yellow:'#E8A32C', ink:'#2b2320',
+  ghostWhite:'#f7f2e6', ghostRed:'#d6473a', frightened:'#5577c9', frightenedPale:'#9fb4e8',
+  eyeWhite:'#ffffff', eyePupil:'#243149'
+};
+const CFG = {
+  playerSpeed: 5.4,        // 셀/초
+  invuln: 1.5,             // 피격 후 무적(초)
+  frightened: 8.0,         // 김치 파워 지속(초)
+  ghostRespawn: 3.0,       // 먹힌 귀신 부활(초)
+  cookTime: 2.4,           // 요리 애니메이션(초)
+  comboWindow: 1.5,        // 콤보 유지 시간(초)
+  eatDist: 0.55,           // 충돌/수집 판정 거리(셀)
+  lives: 3,
+  kimchiPerLevel: 3        // 레벨당 김치 파워 아이템 수
+};
+const DISHES = [
+  {name:'김치',    emoji:'🥬', pot:'🍲'},
+  {name:'떡볶이',  emoji:'🍢', pot:'🥘'},
+  {name:'비빔밥',  emoji:'🍚', pot:'🥣'},
+  {name:'불고기',  emoji:'🥩', pot:'🍳'}
+];
+const DIRS = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+
+/* =======================================================================
+   1. 유틸
+   ======================================================================= */
+const rnd = (a=1)=>Math.random()*a;
+const ri  = (n)=>Math.floor(Math.random()*n);
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=ri(i+1);[a[i],a[j]]=[a[j],a[i]];}return a;}
+const manh=(ax,ay,bx,by)=>Math.abs(ax-bx)+Math.abs(ay-by);
+function roundRect(ctx,x,y,w,h,r){
+  if(ctx.roundRect){ctx.beginPath();ctx.roundRect(x,y,w,h,r);return;}
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);
+  ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();
+}
+
+/* =======================================================================
+   2. 오디오 (WebAudio 합성 · 외부 파일 없음)
+   ======================================================================= */
+const Sound = (function(){
+  let ctx=null, master=null, muted=false;
+  let bgmActive=false, bgmStep=0, bgmNextTime=0, bgmTimer=null, fast=false;
+  // C장조 펜타토닉 (Hz)
+  const NOTE={C4:261.6,D4:293.7,E4:329.6,G4:392.0,A4:440.0,C5:523.3,D5:587.3,E5:659.3,G3:196.0,C3:130.8,A3:220.0};
+  const MELODY=[NOTE.C4,NOTE.E4,NOTE.G4,NOTE.A4, NOTE.G4,NOTE.E4,NOTE.D4,NOTE.E4,
+                NOTE.C4,NOTE.D4,NOTE.E4,NOTE.G4, NOTE.A4,NOTE.G4,NOTE.E4,NOTE.C4];
+  const BASS  =[NOTE.C3,null,NOTE.G3,null, NOTE.A3,null,NOTE.G3,null,
+                NOTE.C3,null,NOTE.G3,null, NOTE.A3,null,NOTE.C3,null];
+  function init(){
+    if(ctx) return;
+    try{ ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+    master=ctx.createGain(); master.gain.value=0.6; master.connect(ctx.destination);
+  }
+  function resume(){ init(); if(ctx&&ctx.state==='suspended') ctx.resume(); }
+  function tone(freq,{dur=0.12,type='triangle',vol=0.25,slideTo=null,delay=0}={}){
+    if(!ctx||muted) return;
+    const t0=ctx.currentTime+delay;
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=type; o.frequency.setValueAtTime(freq,t0);
+    if(slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(1,slideTo),t0+dur);
+    g.gain.setValueAtTime(0.0001,t0);
+    g.gain.exponentialRampToValueAtTime(vol,t0+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+    o.connect(g).connect(master); o.start(t0); o.stop(t0+dur+0.03);
+  }
+  // --- SFX ---
+  function eat(mult){ tone(560+ (mult-1)*160, {dur:0.07,type:'triangle',vol:0.22,slideTo:820+(mult-1)*200}); }
+  function kimchiPick(){ tone(700,{dur:0.1,type:'square',vol:0.18,slideTo:1050}); }
+  function power(){ tone(200,{dur:0.4,type:'square',vol:0.2,slideTo:900}); tone(300,{dur:0.4,type:'sawtooth',vol:0.08,slideTo:1200}); }
+  function ghost(chain){ // "아이고~" 하강
+    const base=760+ (chain-1)*80;
+    tone(base,{dur:0.34,type:'sawtooth',vol:0.22,slideTo:180});
+    tone(base*1.5,{dur:0.34,type:'triangle',vol:0.1,slideTo:220,delay:0.02});
+  }
+  function hit(){ tone(420,{dur:0.5,type:'sawtooth',vol:0.28,slideTo:70}); tone(220,{dur:0.5,type:'square',vol:0.12,slideTo:50,delay:0.03}); }
+  function dish(){ [523,659,784,1047].forEach((f,i)=>tone(f,{dur:0.22,type:'triangle',vol:0.24,delay:i*0.09})); }
+  function over(){ [392,349,294,233].forEach((f,i)=>tone(f,{dur:0.5,type:'triangle',vol:0.22,delay:i*0.18})); }
+  function levelUp(){ [523,659,880].forEach((f,i)=>tone(f,{dur:0.16,type:'square',vol:0.18,delay:i*0.07})); }
+  // --- BGM (룩어헤드 스케줄러) ---
+  function stepSeconds(){ return fast ? 0.20 : 0.25; } // 8분음표 간격
+  function playNote(idx,t){
+    if(!ctx||muted) return;
+    const m=MELODY[idx%MELODY.length]; const b=BASS[idx%BASS.length];
+    if(m){ const o=ctx.createOscillator(),g=ctx.createGain(); o.type='triangle';o.frequency.value=m;
+      g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.09,t+0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.22); o.connect(g).connect(master);o.start(t);o.stop(t+0.26);}
+    if(b){ const o=ctx.createOscillator(),g=ctx.createGain(); o.type='sine';o.frequency.value=b;
+      g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.11,t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.4); o.connect(g).connect(master);o.start(t);o.stop(t+0.45);}
+  }
+  function scheduler(){
+    if(!bgmActive||!ctx){ return; }
+    while(bgmNextTime < ctx.currentTime + 0.15){
+      playNote(bgmStep, bgmNextTime);
+      bgmStep++; bgmNextTime += stepSeconds();
+    }
+    bgmTimer=setTimeout(scheduler,30);
+  }
+  function startBGM(){ if(!ctx||bgmActive) return; bgmActive=true; bgmStep=0; bgmNextTime=ctx.currentTime+0.1; scheduler(); }
+  function stopBGM(){ bgmActive=false; if(bgmTimer){clearTimeout(bgmTimer);bgmTimer=null;} }
+  function setFast(f){ fast=f; }
+  function toggleMute(){ muted=!muted; if(master) master.gain.value=muted?0:0.6; return muted; }
+  return {resume,eat,kimchiPick,power,ghost,hit,dish,over,levelUp,startBGM,stopBGM,setFast,toggleMute,
+          get muted(){return muted;}, get ready(){return !!ctx;}};
+})();
+
+/* =======================================================================
+   3. 미궁 생성 (Recursive Backtracking + 루프 뚫기)
+   ======================================================================= */
+function genMaze(cols,rows){
+  const g=Array.from({length:rows},()=>Array(cols).fill(true)); // true=벽
+  (function carve(cx,cy){
+    g[cy][cx]=false;
+    for(const d of shuffle(DIRS.slice())){
+      const nx=cx+d.x*2, ny=cy+d.y*2;
+      if(nx>0&&nx<cols-1&&ny>0&&ny<rows-1&&g[ny][nx]){
+        g[cy+d.y][cx+d.x]=false; carve(nx,ny);
+      }
+    }
+  })(1,1);
+  // 벽 8~15% 추가로 뚫어 순환로 생성 (막다른 길 완화)
+  const cand=[];
+  for(let y=1;y<rows-1;y++)for(let x=1;x<cols-1;x++){
+    if(!g[y][x]) continue;
+    if(!g[y][x-1]&&!g[y][x+1]) cand.push([x,y]);
+    else if(!g[y-1][x]&&!g[y+1][x]) cand.push([x,y]);
+  }
+  shuffle(cand);
+  const n=Math.floor(cand.length*(0.08+rnd(0.07)));
+  for(let i=0;i<n;i++){ const [x,y]=cand[i]; g[y][x]=false; }
+  return g;
+}
+
+/* =======================================================================
+   4. A* (그리드, 맨해튼)
+   ======================================================================= */
+function astar(g,sx,sy,tx,ty){
+  const rows=g.length, cols=g[0].length;
+  if(g[ty]&&g[ty][tx]) return null; // 목표가 벽
+  const key=(x,y)=>y*cols+x;
+  const open=[{x:sx,y:sy,f:manh(sx,sy,tx,ty)}];
+  const gs=new Map([[key(sx,sy),0]]), came=new Map(), closed=new Set();
+  while(open.length){
+    let bi=0; for(let i=1;i<open.length;i++) if(open[i].f<open[bi].f) bi=i;
+    const cur=open.splice(bi,1)[0], ck=key(cur.x,cur.y);
+    if(cur.x===tx&&cur.y===ty){
+      const path=[]; let k=ck;
+      while(came.has(k)){ path.push([k%cols,(k/cols)|0]); k=came.get(k); }
+      return path.reverse();
+    }
+    if(closed.has(ck)) continue; closed.add(ck);
+    for(const d of DIRS){
+      const nx=cur.x+d.x, ny=cur.y+d.y;
+      if(nx<0||ny<0||nx>=cols||ny>=rows||g[ny][nx]) continue;
+      const nk=key(nx,ny), tent=(gs.get(ck)??Infinity)+1;
+      if(tent < (gs.get(nk)??Infinity)){
+        came.set(nk,ck); gs.set(nk,tent);
+        open.push({x:nx,y:ny,f:tent+manh(nx,ny,tx,ty)});
+      }
+    }
+  }
+  return null;
+}
+
+/* =======================================================================
+   5. 레벨 설정 (GDD 4.1 표 + 6레벨 이상 확장)
+   ======================================================================= */
+function levelConfig(n){
+  const table={
+    1:{cols:11,rows:15,ing:8, enemies:2,time:120,sf:1.00},
+    2:{cols:11,rows:17,ing:9, enemies:2,time:120,sf:1.05},
+    3:{cols:13,rows:19,ing:10,enemies:3,time:110,sf:1.10},
+    4:{cols:13,rows:21,ing:10,enemies:3,time:110,sf:1.15},
+    5:{cols:15,rows:23,ing:11,enemies:4,time:100,sf:1.22}
+  };
+  let c;
+  if(table[n]) c=Object.assign({},table[n]);
+  else{
+    const o=n-5;
+    let cols=Math.min(17,15+2*Math.floor(o/2)), rows=23+2*o;
+    if(cols%2===0)cols++; if(rows%2===0)rows++;
+    c={cols,rows,ing:Math.min(12,11+Math.floor(o/2)),enemies:4,
+       time:Math.max(75,100-5*o),sf:Math.min(1.6,1.22+0.06*o)};
+  }
+  // 적 구성 (MVP는 흰/빨강 2종): 빨강(추격) 개수
+  c.reds = n<=2?1 : n<=4?1 : n<=6?2 : 3;
+  c.reds = Math.min(c.reds, c.enemies-1); // 흰 귀신 최소 1
+  c.whites = c.enemies - c.reds;
+  c.level = n;
+  return c;
+}
+// 적 속도(셀/초). L5까지는 플레이어 이하로 클램프.
+function redSpeed(level){
+  let s=CFG.playerSpeed*(level<=5 ? (0.80+0.04*level) : Math.min(1.35,0.80+0.04*level));
+  return s;
+}
+function whiteSpeed(level){ return redSpeed(level)*0.85; }
+
+/* =======================================================================
+   6. 게임 상태
+   ======================================================================= */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d');
+let VIEW={w:0,h:0,cs:0,ox:0,oy:0,dpr:1};
+let maze=null, cfg=null, dish=null;
+let cols=0, rows=0;
+let player=null, enemies=[], ingredients=[], kimchis=[], particles=[];
+let startCell={x:1,y:1}, homeCell={x:1,y:1}, homeSlots=[];
+let G = {
+  state:'menu',       // menu | playing | cooking | paused | over
+  level:1, lives:CFG.lives, score:0, timeLeft:120,
+  need:8, got:0,
+  kimchiSlot:false, frightened:0, frightChain:0,
+  invuln:0, comboMult:1, comboTimer:0,
+  hitThisLevel:false, dishesDone:0, cookTimer:0, cookPerfect:false,
+  time:0
+};
+let BEST = +(localStorage.getItem('kg_best')||0);
+
+/* ---------- 셀 헬퍼 ---------- */
+const inB=(x,y)=>x>=0&&y>=0&&x<cols&&y<rows;
+const isWall=(x,y)=>!inB(x,y)||maze[y][x];
+function canMove(x,y,d){ return !isWall(x+d.x,y+d.y); }
+function validDirs(x,y){ return DIRS.filter(d=>canMove(x,y,d)); }
+function pathCells(){
+  const out=[];
+  for(let y=1;y<rows-1;y++)for(let x=1;x<cols-1;x++) if(!maze[y][x]) out.push({x,y});
+  return out;
+}
+
+/* =======================================================================
+   7. 레벨 로드
+   ======================================================================= */
+function loadLevel(n){
+  cfg=levelConfig(n);
+  cols=cfg.cols; rows=cfg.rows;
+  dish=DISHES[(n-1)%DISHES.length];
+  maze=genMaze(cols,rows);
+  const cells=pathCells();
+
+  // 플레이어 시작: 하단 중앙 근처
+  let best=null,bd=1e9;
+  for(const c of cells){ const d=(rows-1-c.y)*3+Math.abs(c.x-((cols-1)/2)); if(d<bd){bd=d;best=c;} }
+  startCell={x:best.x,y:best.y};
+
+  // 귀신 집: 중앙
+  best=null;bd=1e9;
+  for(const c of cells){ const d=Math.abs(c.x-((cols-1)/2))+Math.abs(c.y-((rows-1)/2)); if(d<bd){bd=d;best=c;} }
+  homeCell={x:best.x,y:best.y};
+  // 집 주변 슬롯(겹침 방지)
+  homeSlots=[{x:homeCell.x,y:homeCell.y}];
+  for(const d of DIRS){ const nx=homeCell.x+d.x,ny=homeCell.y+d.y; if(!isWall(nx,ny)) homeSlots.push({x:nx,y:ny}); }
+
+  // 수집 대상 셀 후보 (시작점 주변 2칸 & 집 제외)
+  const avoid=new Set();
+  const mark=(x,y,r)=>{for(let dy=-r;dy<=r;dy++)for(let dx=-r;dx<=r;dx++)avoid.add((x+dx)+','+(y+dy));};
+  mark(startCell.x,startCell.y,1);
+  homeSlots.forEach(s=>avoid.add(s.x+','+s.y));
+  let pool=shuffle(cells.filter(c=>!avoid.has(c.x+','+c.y)));
+
+  G.need=cfg.ing; G.got=0;
+  ingredients=pool.splice(0,Math.min(cfg.ing,pool.length)).map(c=>({x:c.x,y:c.y}));
+
+  // 김치 파워 아이템: 남은 셀 중 네 모서리에 가까운 곳 우선
+  const corners=[[1,1],[cols-2,1],[1,rows-2],[cols-2,rows-2]];
+  pool=pool.sort((a,b)=>cornerDist(a,corners)-cornerDist(b,corners));
+  kimchis=pool.slice(0,CFG.kimchiPerLevel).map(c=>({x:c.x,y:c.y}));
+
+  // 플레이어
+  player={x:startCell.x,y:startCell.y,dir:{x:0,y:0},wish:null,speed:CFG.playerSpeed,face:0,mouth:0,t:0};
+
+  // 적 스폰
+  enemies=[];
+  const order=[]; for(let i=0;i<cfg.reds;i++)order.push('red'); for(let i=0;i<cfg.whites;i++)order.push('white');
+  shuffle(order);
+  order.forEach((type,i)=>{
+    const slot=homeSlots[i%homeSlots.length];
+    enemies.push(makeEnemy(type,slot.x,slot.y,i));
+  });
+
+  G.frightened=0; G.frightChain=0; G.invuln=0; G.comboMult=1; G.comboTimer=0;
+  G.hitThisLevel=false; G.timeLeft=cfg.time;
+  Sound.setFast(false);
+  particles.length=0;
+  computeView();
+}
+function cornerDist(c,corners){ let m=1e9; for(const [x,y] of corners) m=Math.min(m,manh(c.x,c.y,x,y)); return m; }
+
+function makeEnemy(type,x,y,idx){
+  return {type,x,y,dir:pickStartDir(x,y),homeIdx:idx,
+    speed:type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level),
+    path:[], replan:0, frightened:false, eaten:false, respawn:0,
+    bob:rnd(6.28), t:rnd(6.28)};
+}
+function pickStartDir(x,y){ const v=validDirs(x,y); return v.length?v[ri(v.length)]:{x:0,y:0}; }
+
+/* =======================================================================
+   8. 이동 (그리드 락 + 결정 콜백)
+   ======================================================================= */
+const EPS=1e-6;
+const aligned=(e)=>Math.abs(e.x-Math.round(e.x))<EPS && Math.abs(e.y-Math.round(e.y))<EPS;
+function distToCenter(e){
+  if(e.dir.x>0) return (Math.floor(e.x+EPS)+1)-e.x;
+  if(e.dir.x<0) return e.x-(Math.ceil(e.x-EPS)-1);
+  if(e.dir.y>0) return (Math.floor(e.y+EPS)+1)-e.y;
+  if(e.dir.y<0) return e.y-(Math.ceil(e.y-EPS)-1);
+  return 0;
+}
+function stepEntity(e,dt,decide){
+  let move=e.speed*dt, guard=0;
+  while(move>EPS && guard++<24){
+    if(aligned(e)){
+      e.x=Math.round(e.x); e.y=Math.round(e.y);
+      decide(e);
+      if(!(e.dir.x||e.dir.y) || !canMove(e.x,e.y,e.dir)){ e.dir={x:0,y:0}; break; }
+    }
+    const dist=distToCenter(e), step=Math.min(move,dist);
+    e.x+=e.dir.x*step; e.y+=e.dir.y*step; move-=step;
+    if(step < dist-EPS) break; // 셀 중앙 못 미침 → 다음 프레임
+  }
+}
+
+/* ---------- 결정 함수들 ---------- */
+function decidePlayer(p){
+  if(p.wish && canMove(p.x,p.y,p.wish)){ p.dir=p.wish; p.wish=null; }
+}
+function decideWhite(e){
+  const opts=validDirs(e.x,e.y), rev={x:-e.dir.x,y:-e.dir.y};
+  let ch=opts.filter(d=>!(d.x===rev.x&&d.y===rev.y));
+  if(!ch.length) ch=opts;
+  if(ch.length) e.dir=ch[ri(ch.length)];
+}
+function decideRed(e){
+  const tx=Math.round(player.x), ty=Math.round(player.y);
+  if(e.replan<=0 || !e.path.length){
+    e.path=astar(maze,e.x,e.y,tx,ty)||[];
+    e.replan=0.4;
+  }
+  const rev={x:-e.dir.x,y:-e.dir.y};
+  if(e.path.length){
+    const [nx,ny]=e.path[0];
+    const dx=nx-e.x, dy=ny-e.y;
+    if(Math.abs(dx)+Math.abs(dy)===1){ e.dir={x:dx,y:dy}; e.path.shift(); return; }
+    e.path=[];
+  }
+  // 그리디 폴백
+  let opts=validDirs(e.x,e.y);
+  let ch=opts.filter(d=>!(d.x===rev.x&&d.y===rev.y)); if(!ch.length)ch=opts;
+  ch.sort((a,b)=>manh(e.x+a.x,e.y+a.y,tx,ty)-manh(e.x+b.x,e.y+b.y,tx,ty));
+  if(ch.length) e.dir=ch[0];
+}
+function decideFrightened(e){
+  const opts=validDirs(e.x,e.y), rev={x:-e.dir.x,y:-e.dir.y};
+  let ch=opts.filter(d=>!(d.x===rev.x&&d.y===rev.y)); if(!ch.length)ch=opts;
+  ch.sort((a,b)=>manh(e.x+b.x,e.y+b.y,player.x,player.y)-manh(e.x+a.x,e.y+a.y,player.x,player.y));
+  if(!ch.length) return;
+  e.dir = (rnd()<0.65)? ch[0] : ch[ri(ch.length)];
+}
+function decideEaten(e){
+  const h=homeSlots[e.homeIdx%homeSlots.length];
+  if(e.replan<=0 || !e.path.length){ e.path=astar(maze,e.x,e.y,h.x,h.y)||[]; e.replan=0.3; }
+  if(e.path.length){
+    const [nx,ny]=e.path[0], dx=nx-e.x, dy=ny-e.y;
+    if(Math.abs(dx)+Math.abs(dy)===1){ e.dir={x:dx,y:dy}; e.path.shift(); return; }
+    e.path=[];
+  }
+  const v=validDirs(e.x,e.y);
+  v.sort((a,b)=>manh(e.x+a.x,e.y+a.y,h.x,h.y)-manh(e.x+b.x,e.y+b.y,h.x,h.y));
+  if(v.length) e.dir=v[0];
+}
+
+/* =======================================================================
+   9. 업데이트
+   ======================================================================= */
+function update(dt){
+  G.time+=dt;
+  // 타이머
+  G.timeLeft-=dt;
+  if(G.timeLeft<=20 && !Sound.muted) Sound.setFast(true);
+  if(G.timeLeft<=0){ G.timeLeft=0; return gameOver('time'); }
+
+  // 콤보
+  if(G.comboTimer>0){ G.comboTimer-=dt; if(G.comboTimer<=0) G.comboMult=1; }
+  if(G.invuln>0) G.invuln-=dt;
+
+  // 김치 파워
+  if(G.frightened>0){
+    G.frightened-=dt;
+    if(G.frightened<=0){ enemies.forEach(e=>{ if(!e.eaten) e.frightened=false; }); G.frightChain=0; }
+  }
+
+  // 플레이어
+  player.t+=dt;
+  const moving=(player.dir.x||player.dir.y);
+  player.mouth = moving ? (Math.sin(player.t*16)*0.5+0.5) : 0.06;
+  if(moving) player.face=Math.atan2(player.dir.y,player.dir.x);
+  stepEntity(player,dt,decidePlayer);
+
+  // 수집: 일반 재료
+  for(let i=ingredients.length-1;i>=0;i--){
+    const g=ingredients[i];
+    if(manh(Math.round(player.x),Math.round(player.y),g.x,g.y)===0 &&
+       Math.hypot(player.x-g.x,player.y-g.y)<CFG.eatDist){
+      ingredients.splice(i,1); collectIngredient(g);
+    }
+  }
+  // 수집: 김치 파워
+  for(let i=kimchis.length-1;i>=0;i--){
+    const k=kimchis[i];
+    if(Math.hypot(player.x-k.x,player.y-k.y)<CFG.eatDist){
+      kimchis.splice(i,1); G.kimchiSlot=true; Sound.kimchiPick(); spawnPop(k.x,k.y,COL.red);
+    }
+  }
+
+  // 적
+  for(const e of enemies){
+    e.t+=dt; e.replan-=dt;
+    if(e.eaten){
+      e.speed=CFG.playerSpeed*1.7;
+      stepEntity(e,dt,decideEaten);
+      const h=homeSlots[e.homeIdx%homeSlots.length];
+      if(Math.round(e.x)===h.x&&Math.round(e.y)===h.y){
+        if(e.respawn<=0) e.respawn=CFG.ghostRespawn;
+        e.respawn-=dt; e.dir={x:0,y:0};
+        if(e.respawn<=0){ e.eaten=false; e.frightened=false; e.dir=pickStartDir(e.x,e.y);
+          e.speed=e.type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level); }
+      }
+      continue;
+    }
+    if(e.frightened){
+      e.speed=(e.type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level))*0.6;
+      stepEntity(e,dt,decideFrightened);
+    } else if(e.type==='red'){
+      e.speed=rubberband(e);
+      stepEntity(e,dt,decideRed);
+    } else {
+      e.speed=whiteSpeed(cfg.level);
+      stepEntity(e,dt,decideWhite);
+    }
+  }
+
+  // 충돌
+  for(const e of enemies){
+    if(e.eaten) continue;
+    if(Math.hypot(player.x-e.x,player.y-e.y) < CFG.eatDist){
+      if(e.frightened){ eatGhost(e); }
+      else if(G.invuln<=0){ hitPlayer(); break; }
+    }
+  }
+
+  updateParticles(dt);
+
+  // 요리 완성?
+  if(G.got>=G.need) startCook();
+}
+
+function rubberband(e){
+  const base=redSpeed(cfg.level);
+  const d=manh(Math.round(e.x),Math.round(e.y),Math.round(player.x),Math.round(player.y));
+  let s=base;
+  if(d<=4) s=base*1.2;
+  if(cfg.level<=5) s=Math.min(s,CFG.playerSpeed); // L5까지 플레이어 이하
+  return s;
+}
+function collectIngredient(g){
+  if(G.comboTimer>0) G.comboMult=Math.min(2.0, Math.round((G.comboMult+0.1)*10)/10);
+  else G.comboMult=1;
+  G.comboTimer=CFG.comboWindow;
+  G.got++;
+  G.score += Math.round(10*G.comboMult);
+  Sound.eat(G.comboMult);
+  spawnPop(g.x,g.y,COL.yellow);
+}
+function eatGhost(e){
+  G.frightChain++;
+  const pts=200*Math.pow(2,G.frightChain-1);
+  G.score+=pts;
+  e.eaten=true; e.frightened=false; e.path=[]; e.respawn=0;
+  Sound.ghost(G.frightChain);
+  spawnSmoke(e.x,e.y);
+  floatText(e.x,e.y,'+'+pts,COL.yellow);
+}
+function hitPlayer(){
+  G.lives--; G.hitThisLevel=true; G.comboMult=1; G.comboTimer=0;
+  Sound.hit();
+  spawnBurst(player.x,player.y,COL.red);
+  if(G.lives<=0){ return gameOver('dead'); }
+  resetPositions();
+  G.invuln=CFG.invuln;
+}
+function resetPositions(){
+  player.x=startCell.x; player.y=startCell.y; player.dir={x:0,y:0}; player.wish=null;
+  G.frightened=0; G.frightChain=0;
+  enemies.forEach((e,i)=>{
+    const s=homeSlots[i%homeSlots.length];
+    e.x=s.x; e.y=s.y; e.dir=pickStartDir(s.x,s.y);
+    e.frightened=false; e.eaten=false; e.respawn=0; e.path=[]; e.replan=0;
+    e.speed=e.type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level);
+  });
+}
+
+/* ---------- 파워업 발동 ---------- */
+function activatePower(){
+  if(G.state!=='playing' || !G.kimchiSlot) return;
+  G.kimchiSlot=false; G.frightened=CFG.frightened; G.frightChain=0;
+  enemies.forEach(e=>{ if(!e.eaten){ e.frightened=true; e.dir={x:-e.dir.x,y:-e.dir.y}; e.path=[]; } });
+  Sound.power();
+  spawnBurst(player.x,player.y,COL.red);
+}
+
+/* ---------- 요리 / 레벨업 ---------- */
+function startCook(){
+  G.state='cooking'; G.cookTimer=CFG.cookTime;
+  G.cookPerfect=!G.hitThisLevel;
+  const timeBonus=Math.floor(G.timeLeft)*5;
+  G.score += 500 + timeBonus + (G.cookPerfect?250:0);
+  G.dishesDone++;
+  Sound.dish(); Sound.setFast(false);
+  // 요리 오버레이 표시
+  document.getElementById('cook-dish').textContent = dish.name+' 완성!  (시간 보너스 +'+timeBonus+')';
+  document.getElementById('cook-pot').textContent = dish.pot;
+  const pf=document.getElementById('cook-perfect');
+  pf.style.display = G.cookPerfect?'block':'none';
+  document.getElementById('cook-bar').firstElementChild.style.width='0%';
+  showOverlay('cook');
+}
+function finishCook(){
+  hideOverlay('cook');
+  G.level++;
+  Sound.levelUp();
+  loadLevel(G.level);
+  G.state='playing';
+}
+
+/* ---------- 게임 오버 ---------- */
+function gameOver(reason){
+  G.state='over';
+  G.score += Math.max(0,G.lives)*1000; // 남은 목숨 보너스
+  if(G.score>BEST){ BEST=G.score; localStorage.setItem('kg_best',BEST); }
+  Sound.stopBGM(); Sound.over();
+  document.getElementById('over-reason').textContent =
+    reason==='time' ? '시간이 다 됐어요... 동이 텄습니다 🌅' : '귀신에게 붙잡혔어요... 아이고~ 👻';
+  document.getElementById('over-score').textContent = G.score.toLocaleString();
+  document.getElementById('over-dishes').textContent = G.dishesDone;
+  document.getElementById('over-best').textContent = '최고 점수 '+BEST.toLocaleString();
+  showOverlay('over');
+}
+
+/* =======================================================================
+   10. 파티클
+   ======================================================================= */
+function spawnPop(x,y,c){ for(let i=0;i<6;i++) particles.push({x,y,vx:(rnd(2)-1)*1.6,vy:(rnd(2)-1)*1.6,life:.35,max:.35,c,r:2.5,g:0}); }
+function spawnBurst(x,y,c){ for(let i=0;i<14;i++){const a=rnd(6.28),s=1.5+rnd(2.5);particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.5,max:.5,c,r:3,g:0});} }
+function spawnSmoke(x,y){ for(let i=0;i<10;i++) particles.push({x,y,vx:(rnd(2)-1)*1.2,vy:-1-rnd(1.5),life:.6,max:.6,c:COL.frightened,r:4,g:-0.5}); }
+let floats=[];
+function floatText(x,y,txt,c){ floats.push({x,y,txt,c,life:.9,max:.9}); }
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=p.g*dt;p.life-=dt; if(p.life<=0)particles.splice(i,1);}
+  for(let i=floats.length-1;i>=0;i--){ const f=floats[i]; f.y-=dt*1.2; f.life-=dt; if(f.life<=0)floats.splice(i,1);}
+}
+
+/* =======================================================================
+   11. 렌더링
+   ======================================================================= */
+function computeView(){
+  const stage=document.getElementById('stage');
+  const w=stage.clientWidth, h=stage.clientHeight;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.width=w+'px'; cv.style.height=h+'px';
+  const cs=Math.floor(Math.min(w/cols,h/rows));
+  VIEW={w,h,cs,ox:Math.floor((w-cs*cols)/2),oy:Math.floor((h-cs*rows)/2),dpr};
+}
+const px=(x)=>VIEW.ox+(x+0.5)*VIEW.cs;
+const py=(y)=>VIEW.oy+(y+0.5)*VIEW.cs;
+
+function render(){
+  const {cs}=VIEW;
+  ctx.setTransform(VIEW.dpr,0,0,VIEW.dpr,0,0);
+  ctx.clearRect(0,0,VIEW.w,VIEW.h);
+  if(!maze) return;
+  // 바닥
+  ctx.fillStyle='#efe3c8'; ctx.fillRect(VIEW.ox,VIEW.oy,cs*cols,cs*rows);
+  // 벽 (한옥 기와 타일)
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+    if(!maze[y][x]) continue;
+    const X=VIEW.ox+x*cs, Y=VIEW.oy+y*cs;
+    ctx.fillStyle=COL.green; roundRect(ctx,X+1,Y+1,cs-2,cs-2,cs*0.28); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.10)'; roundRect(ctx,X+2,Y+2,cs-4,(cs-4)*0.45,cs*0.22); ctx.fill();
+  }
+  // 재료 (색 있는 "펠릿" 원반 + 이모지 → 어떤 기기/폰트에서도 잘 보임)
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  const emFont='px system-ui,"Apple Color Emoji","Noto Color Emoji","Segoe UI Emoji"';
+  const bob0=Math.sin(G.time*4);
+  for(const g of ingredients){
+    const X=px(g.x), Y=py(g.y)+bob0*cs*0.03, r=cs*0.27;
+    const grad=ctx.createRadialGradient(X-r*0.3,Y-r*0.3,r*0.2,X,Y,r);
+    grad.addColorStop(0,'#f6c65a'); grad.addColorStop(1,COL.yellow);
+    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(X,Y,r,0,6.283); ctx.fill();
+    ctx.strokeStyle='rgba(140,70,20,0.55)'; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.font=Math.floor(cs*0.34)+emFont; ctx.fillText(dish.emoji,X,Y+1);
+  }
+  // 김치 파워 (맥동 원반 + 링 → "파워 펠릿")
+  const pulse=0.5+0.5*Math.sin(G.time*6);
+  for(const k of kimchis){
+    const X=px(k.x),Y=py(k.y), r=cs*0.30;
+    ctx.save();
+    const grad=ctx.createRadialGradient(X-r*0.3,Y-r*0.3,r*0.2,X,Y,r);
+    grad.addColorStop(0,COL.redL); grad.addColorStop(1,COL.red);
+    ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(X,Y,r,0,6.283); ctx.fill();
+    ctx.strokeStyle=`rgba(232,163,44,${0.5+0.5*pulse})`; ctx.lineWidth=2+pulse*2.5;
+    ctx.beginPath(); ctx.arc(X,Y,cs*0.40,0,6.283); ctx.stroke();
+    ctx.font=Math.floor(cs*0.34)+emFont; ctx.fillStyle='#fff'; ctx.fillText('🌶️',X,Y+1);
+    ctx.restore();
+  }
+  // 파티클(뒤)
+  for(const p of particles){ ctx.globalAlpha=Math.max(0,p.life/p.max); ctx.fillStyle=p.c;
+    ctx.beginPath(); ctx.arc(px(p.x),py(p.y),p.r,0,6.283); ctx.fill(); }
+  ctx.globalAlpha=1;
+  // 적
+  for(const e of enemies) drawGhost(e);
+  // 플레이어
+  drawPlayer();
+  // 떠오르는 점수
+  ctx.textAlign='center';
+  for(const f of floats){ ctx.globalAlpha=Math.max(0,f.life/f.max); ctx.fillStyle=f.c;
+    ctx.font='bold '+Math.floor(cs*0.5)+'px system-ui,sans-serif';
+    ctx.fillText(f.txt,px(f.x),py(f.y)); }
+  ctx.globalAlpha=1;
+}
+
+function drawPlayer(){
+  const cs=VIEW.cs, X=px(player.x), Y=py(player.y), r=cs*0.42;
+  if(G.invuln>0 && Math.floor(G.time*12)%2===0) return; // 무적 깜빡임
+  ctx.save(); ctx.translate(X,Y); ctx.rotate(player.face);
+  // 몸통 (고추장색 팩맨 입)
+  const open=player.mouth*0.9;
+  ctx.fillStyle=COL.red;
+  ctx.beginPath(); ctx.moveTo(0,0);
+  ctx.arc(0,0,r,open,6.283-open); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.18)'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.restore();
+  // 눈 (회전 무관하게 위쪽)
+  ctx.fillStyle='#2b2320';
+  ctx.beginPath(); ctx.arc(X+ (player.dir.x)*2, Y-r*0.42, r*0.13,0,6.283); ctx.fill();
+  // 요리사 모자
+  ctx.fillStyle='#fff';
+  roundRect(ctx,X-r*0.5,Y-r*1.15,r*1.0,r*0.5,r*0.22); ctx.fill();
+  ctx.beginPath(); ctx.arc(X-r*0.25,Y-r*1.1,r*0.26,0,6.283); ctx.arc(X+r*0.25,Y-r*1.1,r*0.26,0,6.283); ctx.arc(X,Y-r*1.25,r*0.3,0,6.283); ctx.fill();
+}
+
+function drawGhost(e){
+  const cs=VIEW.cs, bob=Math.sin(e.t*3+e.bob)*cs*0.05;
+  const X=px(e.x), Y=py(e.y)+bob, r=cs*0.42;
+  const blink = G.frightened>0 && G.frightened<1 && Math.floor(G.time*8)%2===0;
+  // 먹힌 상태: 눈만
+  if(e.eaten){ drawEyes(X,Y,r,e,'#cdd7f0'); return; }
+  let body;
+  if(e.frightened) body = blink ? COL.frightenedPale : COL.frightened;
+  else body = e.type==='red' ? COL.ghostRed : COL.ghostWhite;
+  ctx.save();
+  ctx.globalAlpha = e.type==='white'&&!e.frightened ? 0.92 : 0.96;
+  ctx.fillStyle=body;
+  ctx.beginPath();
+  ctx.arc(X,Y-r*0.15,r,Math.PI,0); // 돔
+  ctx.lineTo(X+r,Y+r*0.55);
+  // 물결 밑단
+  const b=4;
+  for(let i=0;i<b;i++){ const x0=X+r-(2*r)*(i/b), x1=X+r-(2*r)*((i+0.5)/b);
+    ctx.lineTo(x1, Y+r*0.55 - r*0.18);
+    ctx.lineTo(X+r-(2*r)*((i+1)/b), Y+r*0.55);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1.5; ctx.stroke();
+  ctx.restore();
+  if(e.frightened){
+    // 겁먹은 표정
+    ctx.fillStyle='#fff';
+    ctx.beginPath(); ctx.arc(X-r*0.32,Y-r*0.2,r*0.12,0,6.283); ctx.arc(X+r*0.32,Y-r*0.2,r*0.12,0,6.283); ctx.fill();
+    ctx.strokeStyle='#fff'; ctx.lineWidth=2; ctx.beginPath();
+    ctx.moveTo(X-r*0.4,Y+r*0.28);
+    for(let i=0;i<4;i++) ctx.lineTo(X-r*0.4+(0.8*r)*((i+1)/4), Y+r*0.28+ (i%2?r*0.14:-r*0.14));
+    ctx.stroke();
+  } else {
+    drawEyes(X,Y,r,e,'#fff');
+  }
+}
+function drawEyes(X,Y,r,e,white){
+  const dx=e.dir.x*r*0.16, dy=e.dir.y*r*0.16;
+  ctx.fillStyle=white;
+  ctx.beginPath(); ctx.arc(X-r*0.34,Y-r*0.18,r*0.22,0,6.283); ctx.arc(X+r*0.34,Y-r*0.18,r*0.22,0,6.283); ctx.fill();
+  ctx.fillStyle=COL.eyePupil;
+  ctx.beginPath(); ctx.arc(X-r*0.34+dx,Y-r*0.18+dy,r*0.11,0,6.283); ctx.arc(X+r*0.34+dx,Y-r*0.18+dy,r*0.11,0,6.283); ctx.fill();
+}
+
+/* =======================================================================
+   12. HUD 갱신
+   ======================================================================= */
+const el=(id)=>document.getElementById(id);
+function updateHUD(){
+  el('lives').textContent = '❤️'.repeat(Math.max(0,G.lives)) + '🤍'.repeat(Math.max(0,CFG.lives-G.lives));
+  const t=Math.max(0,Math.ceil(G.timeLeft));
+  el('timer').textContent = String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+  el('timer').classList.toggle('warn', G.timeLeft<=20);
+  el('score').textContent = G.score.toLocaleString();
+  el('dish').textContent = dish? (dish.pot+' '+dish.name) : '';
+  const pct = G.need? Math.min(100,G.got/G.need*100):0;
+  el('bar-fill').style.width = pct+'%';
+  el('bar-txt').textContent = G.got+'/'+G.need;
+  const cbo=el('combo');
+  if(G.comboMult>1 && G.comboTimer>0){ cbo.classList.add('on'); cbo.textContent='콤보 x'+G.comboMult.toFixed(1); }
+  else cbo.classList.remove('on');
+  // 파워 버튼
+  const pb=el('power-btn');
+  if(G.frightened>0){ pb.classList.remove('empty'); pb.classList.remove('ready');
+    el('power-label').textContent=Math.ceil(G.frightened)+'초'; }
+  else if(G.kimchiSlot){ pb.classList.remove('empty'); pb.classList.add('ready'); el('power-label').textContent='파워!'; }
+  else { pb.classList.add('empty'); pb.classList.remove('ready'); el('power-label').textContent='파워'; }
+}
+
+/* =======================================================================
+   13. 오버레이 헬퍼
+   ======================================================================= */
+function showOverlay(id){ el(id).classList.add('show'); }
+function hideOverlay(id){ el(id).classList.remove('show'); }
+function hideAllOverlays(){ ['menu','pause','cook','over'].forEach(hideOverlay); }
+
+/* =======================================================================
+   14. 게임 흐름 제어
+   ======================================================================= */
+function newRun(){
+  Sound.resume(); Sound.startBGM();
+  G.level=1; G.lives=CFG.lives; G.score=0; G.dishesDone=0; G.time=0;
+  G.kimchiSlot=false; G.state='playing';
+  hideAllOverlays();
+  loadLevel(1);
+}
+function togglePause(){
+  if(G.state==='playing'){ G.state='paused'; showOverlay('pause'); Sound.stopBGM(); }
+  else if(G.state==='paused'){ G.state='playing'; hideOverlay('pause'); Sound.resume(); Sound.startBGM(); }
+}
+
+/* =======================================================================
+   15. 입력
+   ======================================================================= */
+function setWish(dx,dy){ if(player) player.wish={x:dx,y:dy}; }
+window.addEventListener('keydown',(ev)=>{
+  const k=ev.key.toLowerCase();
+  if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(ev.key.toLowerCase())||[' '].includes(ev.key)) ev.preventDefault();
+  if(G.state==='menu'){ if(k===' '||k==='enter') newRun(); return; }
+  if(G.state==='over'){ if(k===' '||k==='enter') newRun(); return; }
+  if(k==='escape'||k==='p'){ togglePause(); return; }
+  if(G.state!=='playing') return;
+  if(k==='arrowup'||k==='w') setWish(0,-1);
+  else if(k==='arrowdown'||k==='s') setWish(0,1);
+  else if(k==='arrowleft'||k==='a') setWish(-1,0);
+  else if(k==='arrowright'||k==='d') setWish(1,0);
+  else if(k===' ') activatePower();
+});
+// 터치 스와이프 (연속 조향)
+let tsx=0,tsy=0,tActive=false;
+const stage=document.getElementById('stage');
+const TH=18;
+stage.addEventListener('touchstart',(e)=>{ const t=e.changedTouches[0]; tsx=t.clientX;tsy=t.clientY;tActive=true; e.preventDefault(); },{passive:false});
+stage.addEventListener('touchmove',(e)=>{
+  if(!tActive||G.state!=='playing'){ e.preventDefault(); return; }
+  const t=e.changedTouches[0], dx=t.clientX-tsx, dy=t.clientY-tsy;
+  if(Math.abs(dx)>TH||Math.abs(dy)>TH){
+    if(Math.abs(dx)>Math.abs(dy)) setWish(dx>0?1:-1,0); else setWish(0,dy>0?1:-1);
+    tsx=t.clientX; tsy=t.clientY; // 계속 조향
+  }
+  e.preventDefault();
+},{passive:false});
+stage.addEventListener('touchend',(e)=>{ tActive=false; e.preventDefault(); },{passive:false});
+
+// 버튼
+el('start-btn').addEventListener('click',newRun);
+el('again-btn').addEventListener('click',newRun);
+el('resume-btn').addEventListener('click',togglePause);
+el('restart-btn').addEventListener('click',()=>{ hideOverlay('pause'); newRun(); });
+el('power-btn').addEventListener('click',()=>{ Sound.resume(); activatePower(); });
+el('pause-btn').addEventListener('click',togglePause);
+el('mute-btn').addEventListener('click',()=>{ Sound.resume(); const m=Sound.toggleMute(); el('mute-btn').textContent=m?'🔇':'🔊'; });
+
+// 리사이즈
+let ro=new ResizeObserver(()=>{ if(cols) computeView(); });
+ro.observe(document.getElementById('stage'));
+window.addEventListener('resize',()=>{ if(cols) computeView(); });
+document.addEventListener('visibilitychange',()=>{ if(document.hidden && G.state==='playing') togglePause(); });
+
+/* =======================================================================
+   16. 메인 루프 (고정 타임스텝 60fps 로직)
+   ======================================================================= */
+el('menu-best').textContent=BEST.toLocaleString();
+let last=performance.now(), acc=0; const STEP=1/60;
+function frame(now){
+  requestAnimationFrame(frame);
+  let dt=(now-last)/1000; last=now; if(dt>0.1)dt=0.1;
+  if(G.state==='playing'){ acc+=dt; let n=0; while(acc>=STEP && n++<5){ update(STEP); acc-=STEP; } }
+  else if(G.state==='cooking'){
+    G.cookTimer-=dt; updateParticles(dt);
+    const p=clamp(1-G.cookTimer/CFG.cookTime,0,1);
+    el('cook-bar').firstElementChild.style.width=(p*100)+'%';
+    if(G.cookTimer<=0) finishCook();
+  }
+  render();
+  updateHUD();
+}
+requestAnimationFrame(frame);
+
+/* ---- 디버그 훅 (?debug=1 일 때만 노출; 평상시엔 비활성) ---- */
+if(location.search.indexOf('debug')>=0){
+  window.KG={
+    get G(){return G;}, get player(){return player;}, get enemies(){return enemies;},
+    get ingredients(){return ingredients;}, get kimchis(){return kimchis;},
+    collectAll(){ ingredients.length=0; G.got=G.need; },
+    giveKimchi(){ G.kimchiSlot=true; },
+    setTime(s){ G.timeLeft=s; },
+    warp(x,y){ player.x=x; player.y=y; player.dir={x:0,y:0}; },
+    activate:activatePower
+  };
+}
+
+})();
+</script>
+</body>
+</html>
