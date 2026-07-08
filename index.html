@@ -692,14 +692,21 @@ function update(dt){
   for(const e of enemies){
     e.t+=dt; e.replan-=dt;
     if(e.eaten){
-      e.speed=CFG.playerSpeed*1.7;
-      stepEntity(e,dt,decideEaten);
       const h=homeSlots[e.homeIdx%homeSlots.length];
-      if(Math.round(e.x)===h.x&&Math.round(e.y)===h.y){
+      const atHome=(Math.round(e.x)===h.x && Math.round(e.y)===h.y);
+      if(e.respawn>0 || atHome){
+        // 집 도착/부활 대기: 격자에 스냅하고 정지(스텝 금지 → 부활 시 항상 정수 좌표)
+        e.x=h.x; e.y=h.y; e.dir={x:0,y:0}; e.path=[];
         if(e.respawn<=0) e.respawn=CFG.ghostRespawn;
-        e.respawn-=dt; e.dir={x:0,y:0};
-        if(e.respawn<=0){ e.eaten=false; e.frightened=false; e.dir=pickStartDir(e.x,e.y);
-          e.speed=e.type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level); }
+        e.respawn-=dt;
+        if(e.respawn<=0){
+          e.eaten=false; e.frightened=false; e.respawn=0;
+          e.dir=pickStartDir(h.x,h.y); // 정수 좌표로 방향 선택
+          e.speed=e.type==='red'?redSpeed(cfg.level):whiteSpeed(cfg.level);
+        }
+      } else {
+        e.speed=CFG.playerSpeed*1.7; // 집으로 돌아가는 중에만 이동
+        stepEntity(e,dt,decideEaten);
       }
       continue;
     }
@@ -1085,7 +1092,7 @@ requestAnimationFrame(frame);
 if(location.search.indexOf('debug')>=0){
   window.KG={
     get G(){return G;}, get player(){return player;}, get enemies(){return enemies;},
-    get ingredients(){return ingredients;}, get kimchis(){return kimchis;},
+    get ingredients(){return ingredients;}, get kimchis(){return kimchis;}, get maze(){return maze;},
     collectAll(){ ingredients.length=0; G.got=G.need; },
     giveKimchi(){ G.kimchiSlot=true; },
     setTime(s){ G.timeLeft=s; },
