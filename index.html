@@ -581,41 +581,70 @@ function setupWarpTunnels(){
   }
 }
 
-/* 귀여운 애니풍 미로 스프라이트 (오프스크린, 레벨/크기 변경 시 1회 렌더)
-   - 벽: 둥근 젬/캔디 타일(광택 + 물결 무늬) · 바닥: 크리미한 쌀/모래 텍스처 */
+/* 레벨마다 바뀌는 "캔디" 테마 (귀여운 픽셀 톤). base/hi/sh=벽 색, deco=장식 무늬 */
+const THEMES=[
+  {n:'딸기',   base:'#ff9ec1', hi:'#ffd3e4', sh:'#e0699a', out:'#b23f6b', f1:'#fff0f5', f2:'#ffe6ef', deco:'heart', dc:'rgba(255,255,255,.8)'},
+  {n:'민트',   base:'#79d3b4', hi:'#bff0e0', sh:'#46a88a', out:'#2f8069', f1:'#f0fbf5', f2:'#e4f6ec', deco:'dots',  dc:'rgba(255,255,255,.8)'},
+  {n:'초코',   base:'#9c6b45', hi:'#c79a6f', sh:'#6d4528', out:'#482c17', f1:'#efe0cf', f2:'#e6d4bd', deco:'stripe',dc:'rgba(250,232,205,.85)'},
+  {n:'블루베리',base:'#8ea6f2', hi:'#c6d3ff', sh:'#5c73c8', out:'#3b4e9d', f1:'#eef1ff', f2:'#e2e8fb', deco:'star',  dc:'rgba(255,255,255,.85)'},
+  {n:'레몬',   base:'#ffd95a', hi:'#fff0a8', sh:'#e3b32f', out:'#b78528', f1:'#fffceb', f2:'#fff6d4', deco:'dots',  dc:'rgba(255,255,255,.85)'},
+  {n:'포도',   base:'#b389d9', hi:'#ddc4f0', sh:'#895cb2', out:'#5d3d85', f1:'#f4ecfb', f2:'#ece0f7', deco:'star',  dc:'rgba(255,255,255,.8)'},
+  {n:'솜사탕', base:'#f3a4d6', hi:'#ffd4ee', sh:'#c86fb0', out:'#9b4e87', f1:'#fdeef8', f2:'#f7e2f1', deco:'heart', dc:'rgba(255,255,255,.85)'},
+  {n:'말차',   base:'#a9cf6b', hi:'#d6ecab', sh:'#7fa844', out:'#577a2c', f1:'#f4f7e6', f2:'#ecf2d4', deco:'chips', dc:'rgba(90,60,35,.75)'}
+];
+function levelTheme(){ return THEMES[((cfg?cfg.level:1)-1)%THEMES.length]; }
+
+/* 캔디 벽 미로 스프라이트: 저해상도(셀당 T px) 픽셀로 그린 뒤 nearest-neighbor 확대 */
 function buildMazeSprite(){
-  const cs=VIEW.cs, dpr=VIEW.dpr; if(!cs) return;
+  const cs=VIEW.cs; if(!cs) return;
   mazeW=cols*cs; mazeH=rows*cs;
-  const c=document.createElement('canvas'); c.width=Math.round(mazeW*dpr); c.height=Math.round(mazeH*dpr);
-  const g=c.getContext('2d'); g.scale(dpr,dpr);
-  // 바닥: 따뜻한 크림
-  const bg=g.createLinearGradient(0,0,0,mazeH); bg.addColorStop(0,'#f6ead0'); bg.addColorStop(1,'#eeddba');
-  g.fillStyle=bg; g.fillRect(0,0,mazeW,mazeH);
-  // 쌀알 텍스처 (셀 좌표 해시로 결정적 배치)
+  const th=levelTheme(), T=18;
+  const c=document.createElement('canvas'); c.width=cols*T; c.height=rows*T;
+  const g=c.getContext('2d');
+  // 바닥: 테마색 체커 + 반짝 텍스처
   for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
-    if(maze[y][x]) continue;
+    const X=x*T,Y=y*T;
+    g.fillStyle=((x+y)&1)?th.f1:th.f2; g.fillRect(X,Y,T,T);
     const h=(x*928371+y*1299709)>>>0;
-    g.fillStyle='rgba(255,255,255,0.5)';  g.fillRect(x*cs+(h%(cs|0)), y*cs+((h>>7)%(cs|0)), cs*0.06, cs*0.06);
-    g.fillStyle='rgba(190,160,110,0.18)'; g.fillRect(x*cs+((h>>3)%(cs|0)), y*cs+((h>>13)%(cs|0)), cs*0.05, cs*0.05);
+    g.fillStyle='rgba(255,255,255,0.4)'; g.fillRect(X+(h%T),Y+((h>>5)%T),1,1);
   }
-  // 벽 타일
-  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++) if(maze[y][x]) drawWallTile(g,x*cs,y*cs,cs);
+  // 벽: 캔디 타일
+  for(let y=0;y<rows;y++)for(let x=0;x<cols;x++) if(maze[y][x]) drawCandyTile(g,x*T,y*T,T,th,x,y);
   mazeSprite=c;
 }
-function drawWallTile(g,X,Y,cs){
-  const pad=cs*0.055, r=cs*0.30, x=X+pad, y=Y+pad, w=cs-2*pad, h=cs-2*pad;
+function drawCandyTile(g,X,Y,T,th,gx,gy){
+  const R=4, x=X+1, y=Y+1, w=T-2, h=T-2;
   const grad=g.createLinearGradient(x,y,x,y+h);
-  grad.addColorStop(0,'#63a08b'); grad.addColorStop(0.5,'#3E6B5C'); grad.addColorStop(1,'#2b4f43');
-  roundRect(g,x,y,w,h,r); g.fillStyle=grad; g.fill();
-  g.lineWidth=cs*0.045; g.strokeStyle='rgba(22,42,35,0.35)'; roundRect(g,x,y,w,h,r); g.stroke();
-  g.save(); roundRect(g,x,y,w,h,r); g.clip();
-  // 광택 하이라이트
-  const gl=g.createLinearGradient(x,y,x,y+h*0.55); gl.addColorStop(0,'rgba(255,255,255,0.45)'); gl.addColorStop(1,'rgba(255,255,255,0)');
-  g.fillStyle=gl; roundRect(g,x+w*0.12,y+h*0.07,w*0.76,h*0.42,r*0.7); g.fill();
-  // 은은한 물결 무늬
-  g.strokeStyle='rgba(255,255,255,0.13)'; g.lineWidth=cs*0.035;
-  g.beginPath(); g.arc(x+w*0.5,y+h*0.66,w*0.24,Math.PI*0.05,Math.PI*0.95); g.stroke();
+  grad.addColorStop(0,th.hi); grad.addColorStop(0.5,th.base); grad.addColorStop(1,th.sh);
+  roundRect(g,x,y,w,h,R); g.fillStyle=grad; g.fill();
+  roundRect(g,x+0.5,y+0.5,w-1,h-1,R); g.lineWidth=1.2; g.strokeStyle=th.out; g.stroke();
+  g.save(); roundRect(g,x,y,w,h,R); g.clip();
+  // 윗쪽 광택 밴드
+  g.fillStyle='rgba(255,255,255,0.5)'; roundRect(g,x+2,y+1.5,w-4,h*0.34,R*0.6); g.fill();
+  // 장식 무늬(테마별)
+  drawDeco(g,th.deco,X+T/2,Y+T/2,T,th);
   g.restore();
+  // 캔디 반짝(픽셀)
+  g.fillStyle='rgba(255,255,255,0.9)'; g.fillRect(x+2,y+2,2,2);
+}
+function drawDeco(g,type,cx,cy,T,th){
+  g.fillStyle=th.dc; g.strokeStyle=th.dc;
+  const s=T*0.16;
+  if(type==='dots'){
+    for(const d of [[-0.28,-0.28],[0.28,-0.28],[-0.28,0.28],[0.28,0.28],[0,0]]) { g.beginPath(); g.arc(cx+d[0]*T,cy+d[1]*T,s*0.8,0,6.283); g.fill(); }
+  } else if(type==='chips'){
+    for(const d of [[-0.24,-0.16],[0.22,-0.22],[0.05,0.24]]) g.fillRect(cx+d[0]*T-s*0.7, cy+d[1]*T-s*0.7, s*1.4, s*1.4);
+  } else if(type==='heart'){
+    g.beginPath(); g.arc(cx-s*0.55,cy-s*0.3,s*0.6,0,6.283); g.arc(cx+s*0.55,cy-s*0.3,s*0.6,0,6.283);
+    g.moveTo(cx-s*1.1,cy); g.lineTo(cx,cy+s*1.2); g.lineTo(cx+s*1.1,cy); g.closePath(); g.fill();
+  } else if(type==='star'){
+    g.beginPath();
+    for(let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, rr=(i%2?s*0.5:s*1.2); const fx=cx+Math.cos(a)*rr, fy=cy+Math.sin(a)*rr; i?g.lineTo(fx,fy):g.moveTo(fx,fy); }
+    g.closePath(); g.fill();
+  } else if(type==='stripe'){
+    g.lineWidth=T*0.13; g.lineCap='round';
+    for(let i=-1;i<=2;i++){ g.beginPath(); g.moveTo(cx+(i*0.55-0.5)*T, cy+T*0.5); g.lineTo(cx+(i*0.55-0.5)*T+T, cy-T*0.5); g.stroke(); }
+  }
 }
 
 function makeEnemy(type,x,y,idx){
@@ -979,9 +1008,10 @@ function render(){
   ctx.setTransform(VIEW.dpr,0,0,VIEW.dpr,0,0);
   ctx.clearRect(0,0,VIEW.w,VIEW.h);
   if(!maze) return;
-  // 미로 (부드러운 애니풍 스프라이트)
-  ctx.imageSmoothingEnabled=true;
+  // 미로 (레벨별 캔디 픽셀 벽 → 크리스프 확대)
+  ctx.imageSmoothingEnabled=false;
   if(mazeSprite) ctx.drawImage(mazeSprite, VIEW.ox, VIEW.oy, mazeW, mazeH);
+  ctx.imageSmoothingEnabled=true; // 이후 캐릭터/펠릿은 부드럽게
   const pulse=0.5+0.5*Math.sin(G.time*6);
   // 워프 포탈 (반짝이는 소용돌이)
   warpRows.forEach(y=>{ for(const x of [0,cols-1]) drawPortal(px(x),py(y),cs); });
