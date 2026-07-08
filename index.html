@@ -451,8 +451,9 @@ function levelConfig(n){
   return c;
 }
 // 적 속도(셀/초). L5까지는 플레이어 이하로 클램프.
+function paceMul(lv){ return clamp(0.45 + 0.075*(lv-1), 0.45, 1.12); }  // 레벨 페이스: 아주 느리게 시작 → 점점 빠르게
 function redSpeed(level){
-  let s=CFG.playerSpeed*(level<=5 ? (0.80+0.04*level) : Math.min(1.35,0.80+0.04*level));
+  let s=CFG.playerSpeed*paceMul(level)*(level<=5 ? (0.80+0.04*level) : Math.min(1.30,0.80+0.04*level));
   return s;
 }
 function whiteSpeed(level){ return redSpeed(level)*0.85; }
@@ -758,7 +759,7 @@ function update(dt){
 
   // 플레이어
   player.t+=dt;
-  player.speed = CFG.playerSpeed * (G.boost>0 ? CFG.warpBoostMult : 1);  // 웜홀 부스트
+  player.speed = CFG.playerSpeed*paceMul(cfg.level) * (G.boost>0 ? CFG.warpBoostMult : 1);  // 웜홀 부스트 + 레벨 페이스
   const moving=(player.dir.x||player.dir.y);
   player.mouth = moving ? (Math.sin(player.t*16)*0.5+0.5) : 0.06;
   if(moving) player.face=Math.atan2(player.dir.y,player.dir.x);
@@ -801,7 +802,7 @@ function update(dt){
     e.t+=dt; e.replan-=dt;
     if(G.freeze>0 && !e.eaten) continue;   // 소금에 묶인 귀신은 정지
     if(e.eaten){
-      e.speed=CFG.playerSpeed*1.7;
+      e.speed=CFG.playerSpeed*paceMul(cfg.level)*1.7;
       stepEntity(e,dt,decideEaten);
       const h=homeSlots[e.homeIdx%homeSlots.length];
       if(Math.round(e.x)===h.x&&Math.round(e.y)===h.y){
@@ -851,7 +852,7 @@ function rubberband(e){
   const d=manh(Math.round(e.x),Math.round(e.y),Math.round(player.x),Math.round(player.y));
   let s=base;
   if(d<=4) s=base*1.2;
-  if(cfg.level<=5) s=Math.min(s,CFG.playerSpeed); // L5까지 플레이어 이하
+  if(cfg.level<=5) s=Math.min(s,CFG.playerSpeed*paceMul(cfg.level)); // L5까지 플레이어 이하
   return s;
 }
 function collectIngredient(g){
@@ -931,7 +932,7 @@ function spawnBonus(){
     && !(c.x===homeCell.x&&c.y===homeCell.y));
   if(!far.length){ G.bonusCd=CFG.bonusEvery; return; }
   const c=far[ri(far.length)], t=TREATS[ri(TREATS.length)];
-  bonus={x:c.x,y:c.y,dir:pickStartDir(c.x,c.y),speed:CFG.playerSpeed*0.55,
+  bonus={x:c.x,y:c.y,dir:pickStartDir(c.x,c.y),speed:CFG.playerSpeed*paceMul(cfg.level)*0.55,
     life:CFG.bonusLife,t:0,emoji:t.emoji,name:t.name,_warpFrom:null};
   G.bonusCd=CFG.bonusEvery;
   floatText(c.x,c.y,'✨',COL.yellow);
