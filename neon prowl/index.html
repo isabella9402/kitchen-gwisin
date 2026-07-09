@@ -52,7 +52,11 @@ body{
   padding:6px 12px;display:flex;flex-direction:column;gap:4px;justify-content:center;
 }
 .hud-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-#lives{font-size:clamp(14px,3.6vw,22px);letter-spacing:1px;}
+#lives{font-size:clamp(14px,3.6vw,22px);letter-spacing:1px;display:flex;align-items:center;gap:3px;min-height:24px;}
+#lives .pip{width:22px;height:22px;image-rendering:pixelated;}
+#lives .pip.dim{filter:grayscale(1) brightness(.45);opacity:.5;}
+.ui-ic{display:inline-flex;align-items:center;}
+.ui-ic img{width:18px;height:18px;image-rendering:pixelated;vertical-align:middle;}
 #combo{
   font-size:clamp(12px,3.4vw,20px);font-weight:900;color:var(--combo);
   text-shadow:0 0 8px rgba(255,217,61,.8);opacity:0;transition:opacity .18s,transform .12s;transform:scale(.8);
@@ -121,6 +125,11 @@ body{
 .btn:disabled{filter:grayscale(.8) brightness(.7);cursor:not-allowed;box-shadow:0 5px 0 #333;}
 .hint{font-size:clamp(11px,3vw,15px);color:var(--textMuted);line-height:1.7;margin-top:2px;text-align:left;}
 .hint kbd{background:rgba(255,46,199,.14);border:1px solid rgba(255,46,199,.35);border-radius:5px;padding:1px 7px;font-family:inherit;color:var(--text);}
+#menu-hint{display:flex;flex-direction:column;gap:6px;}
+.hrow{display:flex;align-items:center;gap:9px;}
+.hic{display:inline-flex;width:24px;flex:0 0 24px;justify-content:center;font-size:18px;}
+.hic img{width:22px;height:22px;image-rendering:pixelated;}
+#menu-hero img{width:58px;height:58px;image-rendering:pixelated;margin:0 4px;vertical-align:middle;}
 .credit{position:absolute;bottom:10px;font-size:11px;color:#5f4f80;}
 .row-btn{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;}
 @media (orientation:landscape) and (max-height:520px){ #rotate{display:flex;} }
@@ -139,10 +148,10 @@ body{
       <div id="score-wrap">점수 <b id="score">0</b></div>
     </div>
     <div class="hud-row cell-row">
-      <div id="cell-ic">⚡</div>
+      <span id="cell-ic" class="ui-ic">⚡</span>
       <div id="bar"><div id="bar-fill"></div></div>
       <div id="bar-txt">0/35</div>
-      <div id="best">🥇 <b id="best-val">0</b></div>
+      <div id="best"><span id="best-ic" class="ui-ic">🥇</span> <b id="best-val">0</b></div>
     </div>
   </div>
 
@@ -161,7 +170,7 @@ body{
 
   <!-- 오버레이: 메인 메뉴 -->
   <div class="overlay show" id="menu">
-    <div class="big-emoji">⚡🦊</div>
+    <div class="big-emoji" id="menu-hero">⚡🦊</div>
     <h1>네온 프라울</h1>
     <div class="latin">NEON PROWL</div>
     <div class="sub">네온 미로 속 여우가 되어<br>에너지 셀을 모두 모으세요!</div>
@@ -170,12 +179,12 @@ body{
       <button class="btn alt" id="endless-btn" disabled>무한 모드 🔒</button>
     </div>
     <div class="best">최고 점수 <b id="menu-best">0</b> · 최고 레벨 <b id="menu-level">1</b></div>
-    <div class="hint">
-      ⚡ 에너지 셀을 모두 모아 클리어<br>
-      🧊 아이스 큐브 → <b style="color:var(--cell)">에코 트레일</b>: 잔상에 닿은 적 스턴<br>
-      🥚 미스터리 에그 → 무작위 버프<br>
-      ⏱️ <b style="color:var(--rush)">러시아워</b>: 5초간 점수 3배<br>
-      👁️ 적은 <b>시야</b>에 들어오면 추격 — 코너 뒤에 숨으세요
+    <div class="hint" id="menu-hint">
+      <div class="hrow"><span class="hic" data-ic="cell">⚡</span> 에너지 셀을 모두 모아 클리어</div>
+      <div class="hrow"><span class="hic" data-ic="ice">🧊</span> 아이스 큐브 → <b style="color:var(--cell)">에코 트레일</b>: 잔상에 닿은 적 스턴</div>
+      <div class="hrow"><span class="hic" data-ic="egg">🥚</span> 미스터리 에그 → 무작위 버프</div>
+      <div class="hrow"><span class="hic">⏱️</span> <b style="color:var(--rush)">러시아워</b>: 5초간 점수 3배</div>
+      <div class="hrow"><span class="hic" data-ic="hunter">👁️</span> 적은 <b>시야</b>에 들어오면 추격 — 코너 뒤에 숨으세요</div>
     </div>
     <div class="credit">v1.0 · 한국어</div>
   </div>
@@ -919,24 +928,44 @@ const px=(x)=>VIEW.ox+(x+0.5)*VIEW.cs;
 const py=(y)=>VIEW.oy+(y+0.5)*VIEW.cs;
 const EMFONT='px system-ui,"Apple Color Emoji","Noto Color Emoji","Segoe UI Emoji"';
 
-/* ---------- 스프라이트 (Kenney Tiny Dungeon 타일 · 같은 폴더의 tile_XXXX.png) ----------
-   로드 실패 시(예: 파일 없음/CSP) 자동으로 기존 벡터·이모지 렌더로 폴백. */
-const SPRITE_MAP = { fox:109, sweeper:96, hunter:110, ghost:108, mimic:92, cell:82, ice:116, wall:40, floor:48 };
+/* ---------- 스프라이트 (Kenney · 같은 폴더의 에셋) ----------
+   · 타일: Tiny Dungeon (tile_XXXX.png, 16×16)
+   · 캐릭터: Roguelike Characters 시트 (roguelikeChar_transparent.png, 16px+1 간격)
+   로드 실패 시(파일 없음/CSP) 자동으로 기존 벡터·이모지 렌더로 폴백. */
+const SPRITE_MAP = {
+  hunter:110, ghost:108, mimic:92, cell:82, ice:116, egg:102, fox:109, sweeper:96,
+  wall:40, wall2:57, wall3:58, floor:48, floor2:49, floor3:50, floor4:51, floor5:52, floor6:53
+};
 const SPR={};
 function tileFile(i){ return 'tile_'+String(i).padStart(4,'0')+'.png'; }
 (function loadSprites(){ for(const k in SPRITE_MAP){ const im=new Image(); im.src=tileFile(SPRITE_MAP[k]); SPR[k]=im; } })();
 function hasSpr(k){ const i=SPR[k]; return !!(i && i.complete && i.naturalWidth>0); }
-// 벽·바닥·여우가 모두 로드되면 '던전 룩'(스프라이트) 모드
-function spriteWorld(){ return hasSpr('wall') && hasSpr('floor') && hasSpr('fox'); }
+// 캐릭터 시트 (여우=주황 인물 0,5 · 스위퍼=은갑옷 기사 1,11)
+const CHAR=new Image(); CHAR.src='roguelikeChar_transparent.png';
+const CHAR_POS={ fox:[0,5], sweeper:[1,11] };
+function hasChar(){ return CHAR.complete && CHAR.naturalWidth>0; }
+// 벽·바닥·코인이 모두 로드되면 '던전 룩'(스프라이트) 모드
+function spriteWorld(){ return hasSpr('wall') && hasSpr('floor') && hasSpr('cell'); }
 // 셀 좌상단 채우기(바닥/벽 타일)
 function drawTile(k,gx,gy){ if(!hasSpr(k)) return false; ctx.imageSmoothingEnabled=false;
   ctx.drawImage(SPR[k], VIEW.ox+gx*VIEW.cs, VIEW.oy+gy*VIEW.cs, VIEW.cs, VIEW.cs); return true; }
-// 중심 정렬 스프라이트(캐릭터/아이템)
+// 중심 정렬 스프라이트(아이템/크리처 타일)
 function drawSpr(k,X,Y,size,opts){ if(!hasSpr(k)) return false; opts=opts||{};
   ctx.save(); if(opts.alpha!=null) ctx.globalAlpha=opts.alpha; ctx.translate(X,Y);
   if(opts.tilt) ctx.rotate(opts.tilt); if(opts.sx||opts.sy) ctx.scale(opts.sx||1,opts.sy||1);
   if(opts.flip) ctx.scale(-1,1); ctx.imageSmoothingEnabled=false;
   ctx.drawImage(SPR[k],-size/2,-size/2,size,size); ctx.restore(); return true; }
+// 캐릭터 시트에서 인물 슬라이스
+function drawChar(key,X,Y,size,opts){ if(!hasChar()||!CHAR_POS[key]) return false; opts=opts||{};
+  const [c,r]=CHAR_POS[key];
+  ctx.save(); if(opts.alpha!=null) ctx.globalAlpha=opts.alpha; ctx.translate(X,Y);
+  if(opts.tilt) ctx.rotate(opts.tilt); if(opts.sx||opts.sy) ctx.scale(opts.sx||1,opts.sy||1);
+  if(opts.flip) ctx.scale(-1,1); ctx.imageSmoothingEnabled=false;
+  ctx.drawImage(CHAR, c*17,r*17,16,16, -size/2,-size/2,size,size); ctx.restore(); return true; }
+// 바닥 타일 변주(결정적 해시)
+function hash2(x,y){ return ((x*73856093) ^ (y*19349663))>>>0; }
+function floorKey(x,y){ const h=hash2(x,y)%100;
+  return h<66?'floor':h<78?'floor2':h<86?'floor3':h<92?'floor4':h<97?'floor5':'floor6'; }
 
 function render(){
   const {cs}=VIEW;
@@ -947,9 +976,20 @@ function render(){
   if(shakeAmt>0.1){ const sx=(Math.random()*2-1)*shakeAmt, sy=(Math.random()*2-1)*shakeAmt;
     ctx.setTransform(VIEW.dpr,0,0,VIEW.dpr, sx*VIEW.dpr, sy*VIEW.dpr); }
   if(USPR){
-    // 던전 바닥 + 벽 타일
+    // 던전 바닥(변주) + 벽 타일
     ctx.fillStyle='#17130f'; ctx.fillRect(VIEW.ox,VIEW.oy,cs*cols,cs*rows);
-    for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){ if(maze[y][x]) drawTile('wall',x,y); else drawTile('floor',x,y); }
+    for(let y=0;y<rows;y++)for(let x=0;x<cols;x++){
+      if(maze[y][x]) drawTile(hash2(x,y)%100<80?'wall':(hash2(x,y)%2?'wall2':'wall3'), x,y);
+      else drawTile(floorKey(x,y), x,y);
+    }
+    // 벽 아래 그림자(깊이감)
+    for(let y=1;y<rows;y++)for(let x=0;x<cols;x++){
+      if(!maze[y][x] && maze[y-1][x]){
+        const X=VIEW.ox+x*cs, Y=VIEW.oy+y*cs, g=ctx.createLinearGradient(X,Y,X,Y+cs*0.5);
+        g.addColorStop(0,'rgba(0,0,0,0.42)'); g.addColorStop(1,'rgba(0,0,0,0)');
+        ctx.fillStyle=g; ctx.fillRect(X,Y,cs,cs*0.5);
+      }
+    }
   } else {
     // 바닥
     ctx.fillStyle=COL.floor; ctx.fillRect(VIEW.ox,VIEW.oy,cs*cols,cs*rows);
@@ -1004,13 +1044,16 @@ function render(){
   // 미스터리 에그
   if(egg){
     const blink=egg.life<3 && Math.floor(G.time*8)%2===0;
-    if(!blink){ const X=px(egg.x), Y=py(egg.y)+Math.sin(egg.t*3)*cs*0.05, r=cs*0.28;
-      ctx.save(); const pl=0.5+0.5*Math.sin(G.time*4);
-      ctx.fillStyle='rgba(255,184,77,'+(0.16+pl*0.2)+')'; ctx.beginPath(); ctx.arc(X,Y,r*1.7,0,6.283); ctx.fill();
-      const gr=ctx.createRadialGradient(X-r*0.3,Y-r*0.4,r*0.2,X,Y,r*1.15);
-      gr.addColorStop(0,'#fff4d6'); gr.addColorStop(0.6,'#ffcf6b'); gr.addColorStop(1,'#e08a2e');
-      ctx.fillStyle=gr; ctx.beginPath(); ctx.ellipse(X,Y,r*0.82,r,0,0,6.283); ctx.fill();
-      ctx.font=Math.floor(cs*0.3)+EMFONT; ctx.fillText('🥚',X,Y+1); ctx.restore(); }
+    if(!blink){ const X=px(egg.x), Y=py(egg.y)+Math.sin(egg.t*3)*cs*0.05, pl=0.5+0.5*Math.sin(G.time*4);
+      ctx.save();
+      ctx.fillStyle='rgba(255,184,77,'+(0.18+pl*0.24)+')'; ctx.beginPath(); ctx.arc(X,Y,cs*0.42,0,6.283); ctx.fill();
+      if(USPR && hasSpr('egg')){ drawSpr('egg',X,Y,cs*0.68); }
+      else { const r=cs*0.28;
+        const gr=ctx.createRadialGradient(X-r*0.3,Y-r*0.4,r*0.2,X,Y,r*1.15);
+        gr.addColorStop(0,'#fff4d6'); gr.addColorStop(0.6,'#ffcf6b'); gr.addColorStop(1,'#e08a2e');
+        ctx.fillStyle=gr; ctx.beginPath(); ctx.ellipse(X,Y,r*0.82,r,0,0,6.283); ctx.fill();
+        ctx.font=Math.floor(cs*0.3)+EMFONT; ctx.fillText('🥚',X,Y+1); }
+      ctx.restore(); }
   }
   // 잔상 (에코 트레일) — 오래될수록 옅게
   for(const a of afterimages){
@@ -1115,9 +1158,9 @@ function drawPlayer(){
   const cs=VIEW.cs, bob=REDUCE?0:Math.sin(player.t*10)*1.5;
   const sq=player.sq>0?player.sq/0.1:0, horiz=Math.abs(player.dir.x)>=Math.abs(player.dir.y);
   let sx=1,sy=1; if(sq>0){ if(horiz){sx=1+0.15*sq;sy=1-0.15*sq;} else {sx=1-0.15*sq;sy=1+0.15*sq;} }
-  const X=px(player.x), Y=py(player.y)+bob;
-  if(spriteWorld() && hasSpr('fox')) drawSpr('fox',X,Y,cs*0.86,{tilt:REDUCE?0:player.tilt, sx, sy, flip:player.dir.x<0});
-  else drawFoxShape(X, Y, cs*0.4, {tilt:REDUCE?0:player.tilt, sx, sy, dir:player.dir});
+  const X=px(player.x), Y=py(player.y)+bob, opts={tilt:REDUCE?0:player.tilt, sx, sy, flip:player.dir.x<0};
+  if(spriteWorld() && (drawChar('fox',X,Y-cs*0.06,cs*0.98,opts) || drawSpr('fox',X,Y,cs*0.86,opts))) return;
+  drawFoxShape(X, Y, cs*0.4, {tilt:REDUCE?0:player.tilt, sx, sy, dir:player.dir});
 }
 
 /* ---------- 적 그리기 ---------- */
@@ -1137,10 +1180,14 @@ function drawEnemy(e){
   const shake = e.revealT>0 ? (Math.random()*2-1)*cs*0.08 : 0, XX=X+shake, stunned=e.stun>0;
   // 헌터 시야 원뿔(순찰 시 · 게임플레이 지표 → 두 모드 공통)
   if(e.type==='hunter' && !stunned && e.state==='patrol') drawHunterCone(e,XX,Y);
-  if(USPR && hasSpr(e.type)){
-    const bobp=(e.type==='ghost'&&!stunned)?Math.sin(e.t*3+e.bob)*cs*0.05:0;
-    drawSpr(e.type,XX,Y+bobp,cs*0.82,{flip:e.dir.x<0, alpha: stunned?0.5:(e.type==='ghost'?0.9:1)});
-  } else {
+  let drawn=false;
+  if(USPR){
+    const o={flip:e.dir.x<0, alpha: stunned?0.5:(e.type==='ghost'?0.9:1)};
+    if(e.type==='sweeper') drawn = drawChar('sweeper',XX,Y-cs*0.06,cs*0.98,o) || drawSpr('sweeper',XX,Y,cs*0.82,o);
+    else { const bobp=(e.type==='ghost'&&!stunned)?Math.sin(e.t*3+e.bob)*cs*0.05:0;
+      drawn = drawSpr(e.type,XX,Y+bobp,cs*0.82,o); }
+  }
+  if(!drawn){
     ctx.save(); if(stunned) ctx.globalAlpha=0.85;
     if(e.type==='sweeper') drawSweeper(XX,Y,r,stunned);
     else if(e.type==='hunter') drawHunter(e,XX,Y,r,stunned);
@@ -1212,8 +1259,18 @@ function drawMimic(X,Y,r,st){
    16. HUD 갱신
    ======================================================================= */
 const el=(id)=>document.getElementById(id);
+let _lastLives=-99;
+function renderLives(){
+  if(G.lives===_lastLives) return; _lastLives=G.lives;
+  const n=Math.max(0,G.lives), dim=Math.max(0,CFG.lives-G.lives);
+  if(LIFE_URI){ let s='';
+    for(let i=0;i<n;i++) s+='<img class="pip" src="'+LIFE_URI+'">';
+    for(let i=0;i<dim;i++) s+='<img class="pip dim" src="'+LIFE_URI+'">';
+    el('lives').innerHTML=s;
+  } else el('lives').textContent='🦊'.repeat(n)+'·'.repeat(dim);
+}
 function updateHUD(){
-  el('lives').textContent = '🦊'.repeat(Math.max(0,G.lives)) + '·'.repeat(Math.max(0,CFG.lives-G.lives));
+  renderLives();
   el('score').textContent = G.score.toLocaleString();
   const cbo=el('combo'), v=comboVal();
   if(v>=1.5 && G.comboTimer>0){ cbo.classList.add('on'); cbo.textContent='콤보 x'+v; }
@@ -1296,6 +1353,44 @@ el('mute-btn').addEventListener('click',()=>{ Sound.resume(); const m=Sound.togg
 new ResizeObserver(()=>{ if(cols) computeView(); }).observe(document.getElementById('stage'));
 window.addEventListener('resize',()=>{ if(cols) computeView(); });
 document.addEventListener('visibilitychange',()=>{ if(document.hidden && G.state==='playing') togglePause(); });
+
+/* =======================================================================
+   18b. UI 아이콘 스프라이트 (HUD·메뉴 · 로드 실패 시 이모지 유지)
+   ======================================================================= */
+let LIFE_URI=null;
+function computeLifeURI(){ LIFE_URI=null;
+  try{ if(hasChar()){ const c=document.createElement('canvas'); c.width=32; c.height=32;
+    const g=c.getContext('2d'); g.imageSmoothingEnabled=false; g.drawImage(CHAR,0,5*17,16,16,0,0,32,32);
+    LIFE_URI=c.toDataURL(); } }catch(e){ LIFE_URI=null; } }
+function setIcon(node, tile, emoji, size){
+  const im=new Image(); im.width=size; im.height=size;
+  im.style.cssText='image-rendering:pixelated;vertical-align:middle';
+  im.onload=()=>{ node.textContent=''; node.appendChild(im); };
+  im.onerror=()=>{ node.textContent=emoji; };
+  im.src=tileFile(tile);
+}
+function buildMenuHero(){
+  const host=el('menu-hero'); if(!host) return; host.textContent='';
+  const add=(src,size,fb)=>{ const im=new Image(); im.width=size; im.height=size;
+    im.style.cssText='image-rendering:pixelated;vertical-align:middle;margin:0 4px';
+    im.onload=()=>host.appendChild(im); im.onerror=()=>{ const s=document.createElement('span'); s.textContent=fb; host.appendChild(s); };
+    im.src=src; };
+  add(tileFile(82),52,'⚡');
+  if(LIFE_URI) add(LIFE_URI,58,'🦊'); else add(tileFile(109),52,'🦊');
+}
+function setupIcons(){
+  computeLifeURI();
+  setIcon(el('cell-ic'),82,'⚡',18);
+  setIcon(el('best-ic'),101,'🥇',18);
+  const MAP={cell:82, ice:116, egg:102, hunter:110};
+  document.querySelectorAll('#menu-hint .hic[data-ic]').forEach(sp=>{
+    const t=MAP[sp.dataset.ic]; if(t!=null) setIcon(sp,t,sp.textContent.trim(),22);
+  });
+  buildMenuHero();
+  _lastLives=-99;  // 라이프 아이콘 새 URI로 다시 그리기
+}
+CHAR.onload=()=>{ computeLifeURI(); buildMenuHero(); _lastLives=-99; };
+setupIcons();
 
 /* =======================================================================
    19. 메인 루프 (RAF · 고정 타임스텝 로직)
